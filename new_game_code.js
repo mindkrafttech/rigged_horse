@@ -21,27 +21,9 @@ const TIMER_CONFIG = {
 
 const REWARD_CONFIG = {
   minimum: 0,                   // Minimum discount (0% if 1st hurdle missed)
-  maximum: 100,                 // Maximum discount (100%)
+  maximum: 100,                 // Maximum discount cap
+  discountPerHurdle: 1,         // 1% discount for each hurdle successfully cleared!
   firstHurdleRequired: true,    // Failing 1st hurdle = 0% reward!
-  
-  // Elite performance threshold required for 100% discount
-  eliteThreshold: {
-    required: true,
-    maxTimeSeconds: 30.0,       // Must finish course within 30s
-    minAccuracy: 0.90,          // Must have at least 90% accuracy (e.g. 14/15 hurdles)
-  },
-
-  // Discount tiers for performance rating
-  tiers: [
-    { maxPct: 0,   reward: 0 },
-    { maxPct: 15,  reward: 5 },
-    { maxPct: 30,  reward: 15 },
-    { maxPct: 50,  reward: 30 },
-    { maxPct: 75,  reward: 50 },
-    { maxPct: 90,  reward: 70 },
-    { maxPct: 99,  reward: 85 },
-    { maxPct: 100, reward: 90 }, // Standard 100% progress without elite time/accuracy = 90% OFF
-  ]
 };
 
 const GC = {
@@ -52,31 +34,31 @@ const GC = {
     recycleX: -14,    // hurdle recycled when past here
   },
   player: {
-    jumpVelocity: 10.2,   // world units/s upward
-    gravity: 24,           // world units/s² downward
-    runFrameTime: 0.060,   // seconds per run frame (fast gallop)
+    jumpVelocity: 11.5,   // punchy upward velocity
+    gravity: 28,           // high gravity for narrow jump timing window
+    runFrameTime: 0.050,   // ultra fast gallop frame
     idleFrameTime: 0.38,
     horseHeight: 3.4,      // majestic horse height
     horseAspect: 1.55,     // sprite width/height ratio
-    gracePeriod: 1.8,      // seconds before 1st hurdle timing check
+    gracePeriod: 0.5,      // immediate timing requirement for 1st hurdle
   },
   collision: {
-    horseBoxY0: 0.3,  // collision box bottom
+    horseBoxY0: 0.35, // collision box bottom
     horseBoxY1: 2.8,  // collision box top
-    hurdleHalfX: 0.5, // hurdle collision half-width in X
+    hurdleHalfX: 0.45, // hurdle collision half-width in X
   },
   progression: {
-    totalHurdles: 15,
+    totalHurdles: 20, // 20 hurdles total
     hardModeUnlock: 50,
     completion: 100,
   },
   difficulty: [
-    { minPct: 0,   speed: 13.5, gapMs: [1400, 2200], railH: 1.05 }, // Fast speed right from game start!
-    { minPct: 10,  speed: 14.5, gapMs: [1300, 2000], railH: 1.10 },
-    { minPct: 25,  speed: 16.0, gapMs: [1200, 1800], railH: 1.18 },
-    { minPct: 50,  speed: 18.5, gapMs: [1000, 1500], railH: 1.28 }, // HARD MODE
-    { minPct: 75,  speed: 21.0, gapMs: [900,  1350], railH: 1.35 },
-    { minPct: 90,  speed: 23.5, gapMs: [800,  1200], railH: 1.42 },
+    { minPct: 0,   speed: 19.0, gapMs: [1000, 1600], railH: 1.40 }, // ULTRA FAST starting speed & tall 1st hurdle!
+    { minPct: 10,  speed: 20.5, gapMs: [900,  1450], railH: 1.42 },
+    { minPct: 25,  speed: 22.0, gapMs: [850,  1300], railH: 1.45 },
+    { minPct: 50,  speed: 24.5, gapMs: [750,  1150], railH: 1.48 }, // HARD MODE SPIKE
+    { minPct: 75,  speed: 26.5, gapMs: [680,  1000], railH: 1.52 },
+    { minPct: 90,  speed: 28.5, gapMs: [600,   900], railH: 1.58 },
   ],
 };
 
@@ -252,46 +234,17 @@ const Sound = (() => {
 
 /* ----------------------------- REWARD FORMULA ----------------------------- */
 function calculateReward(progress, elapsedTime = 0, remainingTime = 40, stats = {}) {
-  // Rule 1: First Hurdle Required — missing 1st hurdle = 0% discount
-  const firstPassed = stats ? stats.firstHurdlePassed : (stats && stats.hurdlesCleared > 0);
+  const cleared = (stats && stats.hurdlesCleared !== undefined) ? stats.hurdlesCleared : 0;
+  const firstPassed = (stats && stats.firstHurdlePassed !== undefined) ? stats.firstHurdlePassed : (cleared > 0);
+
+  // Missing 1st hurdle = 0% discount
   if (REWARD_CONFIG.firstHurdleRequired && !firstPassed) {
     return 0;
   }
 
-  // Calculate base reward from progression tiers
-  let baseReward = 0;
-  const p = Math.max(0, Math.min(100, progress));
-  for (let i = REWARD_CONFIG.tiers.length - 1; i >= 0; i--) {
-    if (p >= REWARD_CONFIG.tiers[i].maxPct) {
-      baseReward = REWARD_CONFIG.tiers[i].reward;
-      break;
-    }
-  }
-
-  // Accuracy factor
-  const attempted = (stats && stats.hurdlesAttempted) || 1;
-  const cleared   = (stats && stats.hurdlesCleared)   || 0;
-  const accuracy  = attempted > 0 ? (cleared / attempted) : 1.0;
-
-  let reward = Math.round(baseReward * Math.max(0.6, accuracy));
-
-  // Speed bonus for fast runs
-  if (p > 40 && elapsedTime > 0) {
-    const speedBonus = Math.max(0, Math.round((TIMER_CONFIG.initialSeconds - elapsedTime) * 0.3));
-    reward += speedBonus;
-  }
-
-  // Elite 100% Threshold check for 100% discount:
-  if (p >= 100) {
-    const isElite = (
-      !REWARD_CONFIG.eliteThreshold.required ||
-      (elapsedTime <= REWARD_CONFIG.eliteThreshold.maxTimeSeconds &&
-       accuracy >= REWARD_CONFIG.eliteThreshold.minAccuracy)
-    );
-    return isElite ? 100 : Math.min(90, reward);
-  }
-
-  return Math.max(REWARD_CONFIG.minimum, Math.min(95, reward));
+  // 1% discount for each hurdle successfully cleared!
+  const reward = cleared * REWARD_CONFIG.discountPerHurdle;
+  return Math.min(REWARD_CONFIG.maximum, Math.max(0, reward));
 }
 
 function getDifficulty(pct) {
@@ -1305,7 +1258,7 @@ class Game {
     this.remainingTime = TIMER_CONFIG.initialSeconds;
 
     this.hurdles = [];
-    this.spawnTimer = 1200; // fast initial delay ~1.2s before first hurdle arrives
+    this.spawnTimer = 750; // ultra fast initial delay ~0.75s so first hurdle arrives instantly!
     this.timePlayed = 0;
     this.jumpY  = 0;
     this.jumpVY = 0;
