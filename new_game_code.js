@@ -407,9 +407,9 @@ class ThreeEnv {
     this.renderer.setSize(W, H);
     this.camera.aspect = W / H;
 
-    // On narrow mobile screens (portrait), adapt FOV so horse & track remain in view
+    // On narrow mobile screens (portrait), adjust FOV so horse remains big & prominent
     if (this.camera.aspect < 1.1) {
-      this.camera.fov = Math.min(75, 58 / Math.max(0.55, this.camera.aspect));
+      this.camera.fov = Math.min(64, 56 / Math.max(0.7, this.camera.aspect));
     } else {
       this.camera.fov = 58;
     }
@@ -1033,8 +1033,9 @@ class ThreeEnv {
     const isMobilePortrait = aspect < 1.1;
 
     // Responsive camera position targets for mobile vs desktop
-    const targetZ = (isMobilePortrait ? 15.5 : 12.0) + (hardMode ? 0 : 0.5);
-    const targetCamX = isMobilePortrait ? 1.5 : -1.0;
+    // Mobile: bring camera closer (targetZ = 10.8) & slightly forward (targetCamX = -0.2) for a bigger, prominent horse view!
+    const targetZ = (isMobilePortrait ? 10.8 : 12.0) + (hardMode ? 0 : 0.5);
+    const targetCamX = isMobilePortrait ? -0.2 : -1.0;
 
     // Sway amplitude based on speed
     const swayTarget = Math.min(0.12, speed * 0.005);
@@ -1045,14 +1046,14 @@ class ThreeEnv {
     const bounce = Math.sin(t * 5.6) * this.camSwayAmp * 0.3;
     const jumpFollow = jumpY * 0.25;
 
-    const targetY = (isMobilePortrait ? 4.8 : 4.5) + jumpFollow + bounce;
+    const targetY = (isMobilePortrait ? 3.8 : 4.5) + jumpFollow + bounce;
 
     this.camera.position.x += (targetCamX - this.camera.position.x) * dt * 4;
     this.camera.position.y += (targetY - this.camera.position.y) * dt * 4;
     this.camera.position.z += (targetZ - this.camera.position.z) * dt * 4;
 
-    // Look ahead of horse: on mobile, shift look-at closer to horse (x=0) so horse is fully visible!
-    const lookX = (isMobilePortrait ? 3.0 : 5.0) + speed * 0.08 + sway;
+    // Look ahead of horse
+    const lookX = (isMobilePortrait ? 3.6 : 5.0) + speed * 0.08 + sway;
     const lookY = 1 + jumpY * 0.12;
     this.camera.lookAt(lookX, lookY, 0);
   }
