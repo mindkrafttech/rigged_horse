@@ -104,6 +104,7 @@ $newCode
 </html>
 "@
 
-Set-Content 'horse-jump-game.html' -Value $newHtml -Encoding UTF8
-Write-Host "Done! Output file size: $((Get-Item 'horse-jump-game.html').Length) bytes"
-Write-Host "(No ASSET_B64 embedded -- sprites loaded from sprites\ folder at runtime)"
+Set-Content 'index.html' -Value $newHtml -Encoding UTF8
+if (Test-Path 'horse-jump-game.html') { Remove-Item 'horse-jump-game.html' -Force }
+Write-Host "Done! Updated index.html (size: $((Get-Item 'index.html').Length) bytes)"
+Write-Host "(Removed horse-jump-game.html for GitHub Pages compatibility)"

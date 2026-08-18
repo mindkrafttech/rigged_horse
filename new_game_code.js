@@ -228,9 +228,44 @@ function getDifficulty(pct) {
   return d[0];
 }
 
-/* ----------------------------- ASSET LOADING ------------------------------ */
+/* ----------------------------- ASSET LOADING & TEXTURES ------------------- */
 const SPRITES = {};
 const TEXTURES = {};
+
+// Procedural dirt runway canvas texture generator
+function createDirtTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#825c2d';
+  ctx.fillRect(0, 0, 512, 512);
+
+  // Directional dirt streaks & clay grain
+  for (let i = 0; i < 450; i++) {
+    const y = Math.random() * 512;
+    const h = 1 + Math.random() * 3;
+    const a = 0.05 + Math.random() * 0.14;
+    ctx.fillStyle = Math.random() > 0.5 ? `rgba(168, 124, 70, ${a})` : `rgba(82, 50, 20, ${a})`;
+    ctx.fillRect(0, y, 512, h);
+  }
+
+  // Fine sand noise
+  const img = ctx.getImageData(0, 0, 512, 512);
+  const data = img.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const n = (Math.random() - 0.5) * 24;
+    data[i]   = Math.max(0, Math.min(255, data[i] + n));
+    data[i+1] = Math.max(0, Math.min(255, data[i+1] + n));
+    data[i+2] = Math.max(0, Math.min(255, data[i+2] + n));
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(40, 1);
+  return tex;
+}
 
 // -----------------------------------------------------------------------
 // SPRITE CONFIGURATION
@@ -325,6 +360,7 @@ class ThreeEnv {
     this.buildSky();
     this.buildMountains();
     this.buildGround();
+    this.buildForegroundGrass();
     this.buildCurbs();
     this.buildFence();
     this.buildBanners();
@@ -343,6 +379,13 @@ class ThreeEnv {
     const W = stage.clientWidth, H = stage.clientHeight;
     this.renderer.setSize(W, H);
     this.camera.aspect = W / H;
+
+    // On narrow mobile screens (portrait), adapt FOV so horse & track remain in view
+    if (this.camera.aspect < 1.1) {
+      this.camera.fov = Math.min(75, 58 / Math.max(0.55, this.camera.aspect));
+    } else {
+      this.camera.fov = 58;
+    }
     this.camera.updateProjectionMatrix();
   }
 
@@ -433,9 +476,10 @@ class ThreeEnv {
     grass.receiveShadow = true;
     this.scene.add(grass);
 
-    // Dirt racing lane (rich clay turf color)
+    // Dirt racing lane with procedural dirt canvas texture & bump detail
     const trackGeo = new THREE.PlaneGeometry(300, 7);
-    this.trackMat = new THREE.MeshLambertMaterial({ color: 0x825c2d });
+    this.dirtTex = createDirtTexture();
+    this.trackMat = new THREE.MeshLambertMaterial({ map: this.dirtTex, color: 0xa87c42 });
     const track = new THREE.Mesh(trackGeo, this.trackMat);
     track.rotation.x = -Math.PI / 2;
     track.position.set(0, 0, 0);
@@ -463,6 +507,24 @@ class ThreeEnv {
       this.dashPool.push(d);
     }
     this.dashSpacing = 10;
+  }
+
+  /* ----- Layer 6: Foreground Grass Tufts (Fast Parallax) ----- */
+  buildForegroundGrass() {
+    this.fgGrassPool = [];
+    const grassMat = new THREE.MeshLambertMaterial({ color: 0x467832, side: THREE.DoubleSide });
+    const tuftGeo  = new THREE.ConeGeometry(0.35, 0.7, 4);
+
+    const COUNT = 32;
+    for (let i = 0; i < COUNT; i++) {
+      const g = new THREE.Mesh(tuftGeo, grassMat);
+      const x = i * 4 - 40;
+      const z = 4.8 + Math.random() * 0.8;
+      g.position.set(x, 0.35, z);
+      g.rotation.z = (Math.random() - 0.5) * 0.3;
+      this.scene.add(g);
+      this.fgGrassPool.push({ mesh: g, baseX: x });
+    }
   }
 
   /* ----- 3D Red & White Runway Curbs ----- */
@@ -604,11 +666,20 @@ class ThreeEnv {
     }
   }
 
-  /* ----- Hurdle Pool ----- */
+  /* ----- Hurdle Pool (5 Visual Styles, Same Collision) ----- */
   buildHurdlePool() {
-    const WHITE = new THREE.MeshLambertMaterial({ color: 0xf8f8f8 });
-    const RED   = new THREE.MeshLambertMaterial({ color: 0xcc2200 });
-    const GOLD  = new THREE.MeshLambertMaterial({ color: 0xd4a820 });
+    this.hurdleStyleMats = [
+      // Style 0: Classic Championship (Red & White)
+      { post: new THREE.MeshLambertMaterial({ color: 0xf8f8f8 }), rail: new THREE.MeshLambertMaterial({ color: 0xcc2200 }), base: new THREE.MeshLambertMaterial({ color: 0xd4a820 }), flag: new THREE.MeshLambertMaterial({ color: 0xcc2200 }) },
+      // Style 1: Rustic Timber (Dark Oak & Iron)
+      { post: new THREE.MeshLambertMaterial({ color: 0x4a3219 }), rail: new THREE.MeshLambertMaterial({ color: 0xeeeeee }), base: new THREE.MeshLambertMaterial({ color: 0x2a2a2a }), flag: new THREE.MeshLambertMaterial({ color: 0xc9a24b }) },
+      // Style 2: Turf Emerald (Green & White)
+      { post: new THREE.MeshLambertMaterial({ color: 0xf8f8f8 }), rail: new THREE.MeshLambertMaterial({ color: 0x1f5e2b }), base: new THREE.MeshLambertMaterial({ color: 0x2d5a1b }), flag: new THREE.MeshLambertMaterial({ color: 0x1f5e2b }) },
+      // Style 3: Floral Derby (Bright White & Flowers)
+      { post: new THREE.MeshLambertMaterial({ color: 0xffffff }), rail: new THREE.MeshLambertMaterial({ color: 0xe63946 }), base: new THREE.MeshLambertMaterial({ color: 0x457b9d }), flag: new THREE.MeshLambertMaterial({ color: 0xe63946 }) },
+      // Style 4: Grand Gold Cup (Imperial Navy & Gold)
+      { post: new THREE.MeshLambertMaterial({ color: 0x1b2b4c }), rail: new THREE.MeshLambertMaterial({ color: 0xd4a820 }), base: new THREE.MeshLambertMaterial({ color: 0x1b2b4c }), flag: new THREE.MeshLambertMaterial({ color: 0xd4a820 }) },
+    ];
 
     const postGeo  = new THREE.BoxGeometry(0.28, 1.8, 0.28);
     const railGeo  = new THREE.BoxGeometry(0.22, 0.16, 6.5);
@@ -621,39 +692,37 @@ class ThreeEnv {
     for (let i = 0; i < POOL_SIZE; i++) {
       const g = new THREE.Group();
 
-      // Left upright
-      const lPost = new THREE.Mesh(postGeo, WHITE);
+      const lPost = new THREE.Mesh(postGeo, this.hurdleStyleMats[0].post);
       lPost.position.set(0, 0.9, -3.25);
       lPost.castShadow = true;
       g.add(lPost);
 
-      // Right upright
-      const rPost = new THREE.Mesh(postGeo, WHITE);
+      const rPost = new THREE.Mesh(postGeo, this.hurdleStyleMats[0].post);
       rPost.position.set(0, 0.9, 3.25);
       rPost.castShadow = true;
       g.add(rPost);
 
-      // Main rail (red)
-      const rail = new THREE.Mesh(railGeo, RED);
+      const rail = new THREE.Mesh(railGeo, this.hurdleStyleMats[0].rail);
       rail.castShadow = true;
-      g.add(rail);  // position set per-hurdle
+      g.add(rail);
 
-      // Secondary lower bar (white)
-      const rail2 = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 6.5), WHITE);
+      const rail2 = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 6.5), this.hurdleStyleMats[0].post);
       g.add(rail2);
 
-      // Base blocks
+      const bases = [];
       [-3.25, 3.25].forEach(z => {
-        const base = new THREE.Mesh(baseGeo, GOLD);
+        const base = new THREE.Mesh(baseGeo, this.hurdleStyleMats[0].base);
         base.position.set(0, 0.09, z);
         g.add(base);
+        bases.push(base);
       });
 
-      // Decorative flag/pennant on posts
+      const flags = [];
       [-3.25, 3.25].forEach(z => {
-        const flag = new THREE.Mesh(flagGeo, RED);
+        const flag = new THREE.Mesh(flagGeo, this.hurdleStyleMats[0].flag);
         flag.position.set(0, 1.85, z + (z > 0 ? -0.18 : 0.18));
         g.add(flag);
+        flags.push(flag);
       });
 
       g.visible = false;
@@ -663,8 +732,7 @@ class ThreeEnv {
       this.hurdlePool.push({
         group: g,
         active: false,
-        rail,
-        rail2,
+        lPost, rPost, rail, rail2, bases, flags,
         gameHurdle: null,
       });
     }
@@ -818,6 +886,16 @@ class ThreeEnv {
       slot.group.position.x = gh.x;
       slot.group.position.y = 0;
 
+      // Apply hurdle style materials (5 visual variations)
+      const styleIdx = (gh.style !== undefined) ? gh.style : 0;
+      const m = this.hurdleStyleMats[styleIdx] || this.hurdleStyleMats[0];
+      slot.lPost.material = m.post;
+      slot.rPost.material = m.post;
+      slot.rail.material  = m.rail;
+      slot.rail2.material = m.post;
+      if (slot.bases) slot.bases.forEach(b => b.material = m.base);
+      if (slot.flags) slot.flags.forEach(f => f.material = m.flag);
+
       // Position rail at hurdle height
       slot.rail.position.set(0, gh.height, 0);
       slot.rail2.position.set(0, gh.height - 0.25, 0);
@@ -846,15 +924,15 @@ class ThreeEnv {
     // Horse center Y = ground + half height + jumpY
     this.horseMesh.position.y = H / 2 + jumpY;
 
-    // Shadow: shrinks as horse rises
-    const shadowScale = Math.max(0.2, 1.0 - jumpY * 0.28);
+    // Dynamic Shadow: shrinks & lightens when airborne, expands/darkens on land
+    const shadowScale = Math.max(0.35, 1.2 - jumpY * 0.35);
+    const shadowOpacity = Math.max(0.08, 0.28 - jumpY * 0.12);
     this.horseShadow.scale.setScalar(shadowScale);
-    this.horseShadow.material.opacity = 0.25 * shadowScale;
+    this.horseShadow.material.opacity = shadowOpacity;
 
     // Face camera (billboard around Y axis)
     this.horseMesh.lookAt(this.camera.position);
     this.horseMesh.rotation.y = 0; // sprite faces right (direction of travel)
-    // Keep upright
     this.horseMesh.rotation.x = 0;
     this.horseMesh.rotation.z = 0;
 
@@ -922,8 +1000,15 @@ class ThreeEnv {
     }
   }
 
-  /* ----- Camera update ----- */
+  /* ----- Camera update (Mobile & Desktop Responsive) ----- */
   updateCamera(dt, jumpY, speed, hardMode) {
+    const aspect = this.camera.aspect || 1.0;
+    const isMobilePortrait = aspect < 1.1;
+
+    // Responsive camera position targets for mobile vs desktop
+    const targetZ = (isMobilePortrait ? 15.5 : 12.0) + (hardMode ? 0 : 0.5);
+    const targetCamX = isMobilePortrait ? 1.5 : -1.0;
+
     // Sway amplitude based on speed
     const swayTarget = Math.min(0.12, speed * 0.005);
     this.camSwayAmp += (swayTarget - this.camSwayAmp) * dt * 3;
@@ -931,19 +1016,16 @@ class ThreeEnv {
     const t = performance.now() * 0.001;
     const sway = Math.sin(t * 2.8) * this.camSwayAmp;
     const bounce = Math.sin(t * 5.6) * this.camSwayAmp * 0.3;
-
-    // Jump follow
     const jumpFollow = jumpY * 0.25;
 
-    const targetY = 4.5 + jumpFollow + bounce;
-    const targetZ = 12 + (hardMode ? 0 : 0.5);
+    const targetY = (isMobilePortrait ? 4.8 : 4.5) + jumpFollow + bounce;
 
-    this.camera.position.x += (-1 - this.camera.position.x) * dt * 4;
+    this.camera.position.x += (targetCamX - this.camera.position.x) * dt * 4;
     this.camera.position.y += (targetY - this.camera.position.y) * dt * 4;
     this.camera.position.z += (targetZ - this.camera.position.z) * dt * 4;
 
-    // Look ahead of horse slightly
-    const lookX = 5 + speed * 0.1 + sway;
+    // Look ahead of horse: on mobile, shift look-at closer to horse (x=0) so horse is fully visible!
+    const lookX = (isMobilePortrait ? 3.0 : 5.0) + speed * 0.08 + sway;
     const lookY = 1 + jumpY * 0.12;
     this.camera.lookAt(lookX, lookY, 0);
   }
@@ -985,6 +1067,16 @@ class ThreeEnv {
       const curbW = this.curbTotalW;
       for (const c of this.curbPool) {
         c.mesh.position.x = c.baseX - (this.scrollX) % curbW;
+      }
+    }
+
+    // Foreground grass tufts (1.25x parallax speed)
+    if (this.fgGrassPool) {
+      const fgTotalW = 32 * 4;
+      for (const g of this.fgGrassPool) {
+        g.mesh.position.x = g.baseX - (this.scrollX * 1.25) % fgTotalW;
+        if (g.mesh.position.x < -30) g.baseX += fgTotalW;
+        if (g.mesh.position.x > 70)  g.baseX -= fgTotalW;
       }
     }
 
@@ -1186,9 +1278,11 @@ class Game {
   spawnHurdle() {
     const diff = this.getDiff();
     const railH = diff.railH + (Math.random() * 0.08 - 0.04);
+    const style = Math.floor(Math.random() * 5); // 5 visual hurdle variations
     this.hurdles.push({
       x:       GC.world.spawnX,
       height:  railH,
+      style:   style,
       cleared: false,
     });
   }
