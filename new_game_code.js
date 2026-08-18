@@ -1249,6 +1249,8 @@ class Game {
 
   reset() {
     this.progress = 0;
+    this.distanceTraveled = 0;
+    this.totalCourseDistance = 720; // 720 world units total course length (~35s at ~20 units/s)
     this.hardMode = false;
     this.hurdlesCleared = 0;
     this.hurdlesAttempted = 0;
@@ -1361,10 +1363,9 @@ class Game {
     setTimeout(() => showScreen('screenVictory'), 350);
   }
 
-  addProgress(amount) {
+  setProgress(val) {
     const wasHard = this.hardMode;
-    this.progress = Math.min(100, this.progress + amount);
-    updateHUD(this);
+    this.progress = Math.min(100, Math.max(0, val));
     if (!wasHard && this.progress >= GC.progression.hardModeUnlock) {
       this.hardMode = true;
       setModeUI(true);
@@ -1414,6 +1415,11 @@ class Game {
     const diff  = this.getDiff();
     const speed = diff.speed;
     this.timePlayed += dt;
+
+    // Continuous smooth course progress based on distance traveled
+    this.distanceTraveled += speed * dt;
+    const currentPct = (this.distanceTraveled / this.totalCourseDistance) * 100;
+    this.setProgress(currentPct);
 
     // Countdown Timer Logic
     if (TIMER_CONFIG.enabled) {
@@ -1497,11 +1503,9 @@ class Game {
         h.cleared = true;
         this.firstHurdlePassed = true;
         this.hurdlesCleared++;
-        const gain = 100 / GC.progression.totalHurdles;
-        this.addProgress(gain);
         Sound.clear();
         this.env.triggerClearEffect();
-        spawnFloatingText('+' + Math.round(gain) + '%');
+        spawnFloatingText('+1% OFF');
         if (this.state !== STATE.PLAYING) return;
       }
 
