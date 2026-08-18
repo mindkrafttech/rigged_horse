@@ -35,6 +35,13 @@ $htmlHead
   <div id="stage">
     <canvas id="game"></canvas>
 
+    <style>
+      #timerPill.warning{border-color:#e8a838;color:#ffda73;}
+      #timerPill.warning b{color:#ffe599;}
+      #timerPill.critical{border-color:#ff4d4d;color:#ff9999;animation:timerPulse 0.5s infinite alternate;}
+      @keyframes timerPulse{0%{transform:scale(1);}100%{transform:scale(1.06);border-color:#ff1a1a;}}
+    </style>
+
     <div id="hud">
       <div class="hud-row">
         <div class="hud-pill" id="modePill">MODE: <b>NORMAL</b></div>
@@ -42,7 +49,8 @@ $htmlHead
         <div class="hud-pill" id="progressPill">PROGRESS: <b>0%</b></div>
       </div>
       <div class="hud-row">
-        <div class="hud-pill" id="rewardPill">REWARD: <b>5% OFF</b></div>
+        <div class="hud-pill" id="rewardPill">REWARD: <b>0% OFF</b></div>
+        <div class="hud-pill" id="timerPill">TIME: <b id="timerVal">00:40.00</b></div>
       </div>
     </div>
 
@@ -56,10 +64,10 @@ $htmlHead
     <!-- START SCREEN -->
     <div class="overlay active" id="screenStart">
       <div class="card">
-        <div class="eyebrow">EQUESTRIAN CHALLENGE</div>
-        <h1>Clear the Course</h1>
+        <div class="eyebrow">HORSE RACING TICKET DISCOUNT</div>
+        <h1>Race for Discount</h1>
         <img class="hero-img" id="startHero" alt="Horse and rider">
-        <p>Jump over every hurdle and complete the course to unlock your reward. Time it right &#8212; one miss ends the ride.</p>
+        <p>Jump over every hurdle on the racecourse! First hurdle required. Fast speed and high accuracy earn up to 100% OFF your ticket.</p>
         <button class="btn gold" id="btnStart">START RIDE</button>
         <div class="small-note">
           Desktop: <span class="kbd">SPACE</span> or <span class="kbd">&#8593;</span> &nbsp;&bull;&nbsp; Mobile: tap JUMP
@@ -71,13 +79,29 @@ $htmlHead
     <div class="overlay" id="screenOver">
       <div class="card">
         <div class="eyebrow">RUN OVER</div>
-        <h1>Hurdle Missed</h1>
-        <p>The horse caught the rail. Here's how far you made it.</p>
+        <h1 id="overTitle">Hurdle Missed</h1>
+        <p id="overDesc">The horse caught the rail. Here is your earned discount.</p>
         <div class="stat-row">
           <div class="stat-box"><div class="label">PROGRESS</div><div class="value" id="overProgress">0%</div></div>
-          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="overReward">5%</div></div>
+          <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="overAccuracy">0%</div></div>
+          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="overReward">0% OFF</div></div>
         </div>
         <button class="btn" id="btnRetry">TRY AGAIN</button>
+      </div>
+    </div>
+
+    <!-- TIMEOUT SCREEN -->
+    <div class="overlay" id="screenTimeout">
+      <div class="card">
+        <div class="eyebrow">TIME EXPIRED</div>
+        <h1>Time Up!</h1>
+        <p>You ran out of time on the course. Here is your discount based on distance & accuracy.</p>
+        <div class="stat-row">
+          <div class="stat-box"><div class="label">PROGRESS</div><div class="value" id="timeProgress">0%</div></div>
+          <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="timeAccuracy">0%</div></div>
+          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="timeReward">0% OFF</div></div>
+        </div>
+        <button class="btn" id="btnTimeoutRetry">TRY AGAIN</button>
       </div>
     </div>
 
@@ -85,11 +109,12 @@ $htmlHead
     <div class="overlay" id="screenVictory">
       <div class="card">
         <div class="eyebrow">COURSE COMPLETE</div>
-        <h1>Perfect Round!</h1>
-        <p>You cleared every hurdle on the course. Your reward is locked in.</p>
+        <h1>Championship Round!</h1>
+        <p>Exceptional ride! Show your final discount result at the ticket counter.</p>
         <div class="stat-row">
-          <div class="stat-box"><div class="label">PROGRESS</div><div class="value">100%</div></div>
-          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="victoryReward">100%</div></div>
+          <div class="stat-box"><div class="label">TIME</div><div class="value" id="victoryTime">00:00</div></div>
+          <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="victoryAccuracy">100%</div></div>
+          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="victoryReward">100% OFF</div></div>
         </div>
         <button class="btn gold" id="btnVictoryRestart">RIDE AGAIN</button>
       </div>

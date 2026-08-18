@@ -6,6 +6,44 @@ import * as THREE from 'three';
    ========================================================================= */
 
 /* ----------------------------- GAME CONFIG -------------------------------- */
+/* =========================================================================
+   CENTRAL BUSINESS & GAMEPLAY CONFIGURATIONS
+   (Easy tuning for promotional reward rules, timer, difficulty & course)
+   ========================================================================= */
+
+const TIMER_CONFIG = {
+  enabled: true,
+  initialSeconds: 40.0,
+  warningSeconds: 10.0,
+  criticalSeconds: 5.0,
+  timeoutRewardMode: 'achieved_no_bonus', // 'achieved_no_bonus' | 'zero'
+};
+
+const REWARD_CONFIG = {
+  minimum: 0,                   // Minimum discount (0% if 1st hurdle missed)
+  maximum: 100,                 // Maximum discount (100%)
+  firstHurdleRequired: true,    // Failing 1st hurdle = 0% reward!
+  
+  // Elite performance threshold required for 100% discount
+  eliteThreshold: {
+    required: true,
+    maxTimeSeconds: 30.0,       // Must finish course within 30s
+    minAccuracy: 0.90,          // Must have at least 90% accuracy (e.g. 14/15 hurdles)
+  },
+
+  // Discount tiers for performance rating
+  tiers: [
+    { maxPct: 0,   reward: 0 },
+    { maxPct: 15,  reward: 5 },
+    { maxPct: 30,  reward: 15 },
+    { maxPct: 50,  reward: 30 },
+    { maxPct: 75,  reward: 50 },
+    { maxPct: 90,  reward: 70 },
+    { maxPct: 99,  reward: 85 },
+    { maxPct: 100, reward: 90 }, // Standard 100% progress without elite time/accuracy = 90% OFF
+  ]
+};
+
 const GC = {
   world: {
     horseX: 0,        // horse fixed world X
@@ -14,16 +52,16 @@ const GC = {
     recycleX: -14,    // hurdle recycled when past here
   },
   player: {
-    jumpVelocity: 10.2,   // world units/s upward (scaled for bigger horse)
+    jumpVelocity: 10.2,   // world units/s upward
     gravity: 24,           // world units/s² downward
     runFrameTime: 0.060,   // seconds per run frame (fast gallop)
     idleFrameTime: 0.38,
-    horseHeight: 3.4,      // SLIGHTLY BIGGER MAJESTIC HORSE (was 2.6)
+    horseHeight: 3.4,      // majestic horse height
     horseAspect: 1.55,     // sprite width/height ratio
-    gracePeriod: 2.0,      // seconds before any collision can register
+    gracePeriod: 1.8,      // seconds before 1st hurdle timing check
   },
   collision: {
-    horseBoxY0: 0.3,  // collision box bottom (above ground)
+    horseBoxY0: 0.3,  // collision box bottom
     horseBoxY1: 2.8,  // collision box top
     hurdleHalfX: 0.5, // hurdle collision half-width in X
   },
@@ -33,19 +71,17 @@ const GC = {
     completion: 100,
   },
   difficulty: [
-    { minPct: 0,  speed: 8,   gapMs: [2800, 4500], railH: 0.95 },
-    { minPct: 20, speed: 9,   gapMs: [2400, 4000], railH: 1.02 },
-    { minPct: 40, speed: 11,  gapMs: [2000, 3400], railH: 1.10 },
-    { minPct: 50, speed: 14,  gapMs: [1600, 2800], railH: 1.20 }, // HARD
-    { minPct: 70, speed: 17,  gapMs: [1300, 2200], railH: 1.28 },
-    { minPct: 85, speed: 20,  gapMs: [1100, 1900], railH: 1.35 },
-    { minPct: 95, speed: 22,  gapMs: [950,  1650], railH: 1.42 },
+    { minPct: 0,   speed: 8.5, gapMs: [2400, 3600], railH: 0.95 },
+    { minPct: 10,  speed: 9.5, gapMs: [2100, 3200], railH: 1.02 },
+    { minPct: 25,  speed: 11.5,gapMs: [1800, 2700], railH: 1.10 },
+    { minPct: 50,  speed: 15.0,gapMs: [1400, 2200], railH: 1.22 }, // HARD MODE
+    { minPct: 75,  speed: 18.5,gapMs: [1200, 1800], railH: 1.32 },
+    { minPct: 90,  speed: 21.0,gapMs: [1000, 1500], railH: 1.40 },
   ],
-  reward: { minimum: 5, maximum: 100 },
 };
 
 /* ----------------------------- GAME STATES -------------------------------- */
-const STATE = { START: 0, PLAYING: 1, GAME_OVER: 2, VICTORY: 3 };
+const STATE = { START: 0, PLAYING: 1, GAME_OVER: 2, VICTORY: 3, TIMEOUT: 4 };
 const ANIM  = { IDLE: 0, RUN: 1, JUMP: 2, HIT: 3 };
 
 /* ----------------------------- SOUND -------------------------------------- */
@@ -214,10 +250,48 @@ const Sound = (() => {
   };
 })();
 
-/* ----------------------------- REWARD ------------------------------------- */
-function calculateReward(pct) {
-  const p = Math.max(0, Math.min(100, pct));
-  return Math.round(GC.reward.minimum + (GC.reward.maximum - GC.reward.minimum) * (p / 100));
+/* ----------------------------- REWARD FORMULA ----------------------------- */
+function calculateReward(progress, elapsedTime = 0, remainingTime = 40, stats = {}) {
+  // Rule 1: First Hurdle Required — missing 1st hurdle = 0% discount
+  const firstPassed = stats ? stats.firstHurdlePassed : (stats && stats.hurdlesCleared > 0);
+  if (REWARD_CONFIG.firstHurdleRequired && !firstPassed) {
+    return 0;
+  }
+
+  // Calculate base reward from progression tiers
+  let baseReward = 0;
+  const p = Math.max(0, Math.min(100, progress));
+  for (let i = REWARD_CONFIG.tiers.length - 1; i >= 0; i--) {
+    if (p >= REWARD_CONFIG.tiers[i].maxPct) {
+      baseReward = REWARD_CONFIG.tiers[i].reward;
+      break;
+    }
+  }
+
+  // Accuracy factor
+  const attempted = (stats && stats.hurdlesAttempted) || 1;
+  const cleared   = (stats && stats.hurdlesCleared)   || 0;
+  const accuracy  = attempted > 0 ? (cleared / attempted) : 1.0;
+
+  let reward = Math.round(baseReward * Math.max(0.6, accuracy));
+
+  // Speed bonus for fast runs
+  if (p > 40 && elapsedTime > 0) {
+    const speedBonus = Math.max(0, Math.round((TIMER_CONFIG.initialSeconds - elapsedTime) * 0.3));
+    reward += speedBonus;
+  }
+
+  // Elite 100% Threshold check for 100% discount:
+  if (p >= 100) {
+    const isElite = (
+      !REWARD_CONFIG.eliteThreshold.required ||
+      (elapsedTime <= REWARD_CONFIG.eliteThreshold.maxTimeSeconds &&
+       accuracy >= REWARD_CONFIG.eliteThreshold.minAccuracy)
+    );
+    return isElite ? 100 : Math.min(90, reward);
+  }
+
+  return Math.max(REWARD_CONFIG.minimum, Math.min(95, reward));
 }
 
 function getDifficulty(pct) {
@@ -1156,16 +1230,25 @@ class Game {
     this.progress = 0;
     this.hardMode = false;
     this.hurdlesCleared = 0;
+    this.hurdlesAttempted = 0;
+    this.firstHurdlePassed = false;
+
+    // Timer state
+    this.elapsedTime   = 0;
+    this.remainingTime = TIMER_CONFIG.initialSeconds;
+
+    // Result object
+    this.lastResultData = null;
 
     // Physics (world units)
-    this.jumpY  = 0;    // current vertical offset (0 = grounded)
-    this.jumpVY = 0;    // vertical velocity
+    this.jumpY  = 0;
+    this.jumpVY = 0;
     this.isAirborne = false;
 
     // Hurdles
     this.hurdles = [];
     this.spawnTimer = 0;
-    this.timePlayed = 0;   // grace period tracker
+    this.timePlayed = 0;
 
     // Animation
     this.animTimer  = 0;
@@ -1215,8 +1298,14 @@ class Game {
     this.progress = 0;
     this.hardMode = false;
     this.hurdlesCleared = 0;
+    this.hurdlesAttempted = 0;
+    this.firstHurdlePassed = false;
+
+    this.elapsedTime = 0;
+    this.remainingTime = TIMER_CONFIG.initialSeconds;
+
     this.hurdles = [];
-    this.spawnTimer = 2800; // initial delay ~2.8s before first hurdle appears on screen
+    this.spawnTimer = 2400; // initial delay ~2.4s before first hurdle arrives
     this.timePlayed = 0;
     this.jumpY  = 0;
     this.jumpVY = 0;
@@ -1238,16 +1327,66 @@ class Game {
     showScreen(null);
   }
 
+  getStats() {
+    const accuracy = this.hurdlesAttempted > 0 ? (this.hurdlesCleared / this.hurdlesAttempted) : (this.firstHurdlePassed ? 1 : 0);
+    return {
+      progress: Math.floor(this.progress),
+      elapsedTime: this.elapsedTime.toFixed(2),
+      remainingTime: this.remainingTime.toFixed(2),
+      hurdlesAttempted: this.hurdlesAttempted,
+      hurdlesCleared: this.hurdlesCleared,
+      accuracy: accuracy,
+      firstHurdlePassed: this.firstHurdlePassed,
+      hardModeReached: this.hardMode,
+      completed: this.state === STATE.VICTORY,
+      timedOut: this.state === STATE.TIMEOUT,
+    };
+  }
+
   gameOver() {
     this.state = STATE.GAME_OVER;
     this.animState = ANIM.HIT;
     Sound.hit();
     Sound.stopGallop();
     Sound.stopMusic();
-    const reward = calculateReward(this.progress);
-    document.getElementById('overProgress').textContent = Math.floor(this.progress) + '%';
+
+    const stats = this.getStats();
+    const reward = calculateReward(this.progress, this.elapsedTime, this.remainingTime, stats);
+    stats.reward = reward;
+    this.lastResultData = stats;
+    console.log('🏁 GAME OVER RESULT:', stats);
+
+    document.getElementById('overProgress').textContent = stats.progress + '%';
+    document.getElementById('overAccuracy').textContent = Math.round(stats.accuracy * 100) + '%';
     document.getElementById('overReward').textContent = reward + '% OFF';
+
+    if (!stats.firstHurdlePassed) {
+      document.getElementById('overTitle').textContent = 'Failed 1st Hurdle';
+      document.getElementById('overDesc').textContent = 'You must clear at least the 1st hurdle to earn a discount.';
+    } else {
+      document.getElementById('overTitle').textContent = 'Hurdle Missed';
+      document.getElementById('overDesc').textContent = 'The horse caught the rail. Here is your earned discount.';
+    }
+
     setTimeout(() => showScreen('screenOver'), 500);
+  }
+
+  timeOut() {
+    this.state = STATE.TIMEOUT;
+    Sound.stopGallop();
+    Sound.stopMusic();
+
+    const stats = this.getStats();
+    const reward = calculateReward(this.progress, this.elapsedTime, 0, stats);
+    stats.reward = reward;
+    this.lastResultData = stats;
+    console.log('🏁 TIMEOUT RESULT:', stats);
+
+    document.getElementById('timeProgress').textContent = stats.progress + '%';
+    document.getElementById('timeAccuracy').textContent = Math.round(stats.accuracy * 100) + '%';
+    document.getElementById('timeReward').textContent = reward + '% OFF';
+
+    setTimeout(() => showScreen('screenTimeout'), 400);
   }
 
   victory() {
@@ -1255,8 +1394,17 @@ class Game {
     Sound.victory();
     Sound.stopGallop();
     Sound.stopMusic();
-    const reward = calculateReward(100);
+
+    const stats = this.getStats();
+    const reward = calculateReward(100, this.elapsedTime, this.remainingTime, stats);
+    stats.reward = reward;
+    this.lastResultData = stats;
+    console.log('🏁 VICTORY RESULT:', stats);
+
+    document.getElementById('victoryTime').textContent = stats.elapsedTime + 's';
+    document.getElementById('victoryAccuracy').textContent = Math.round(stats.accuracy * 100) + '%';
     document.getElementById('victoryReward').textContent = reward + '% OFF';
+
     setTimeout(() => showScreen('screenVictory'), 350);
   }
 
@@ -1296,6 +1444,16 @@ class Game {
     const diff  = this.getDiff();
     const speed = diff.speed;
     this.timePlayed += dt;
+
+    // Countdown Timer Logic
+    if (TIMER_CONFIG.enabled) {
+      this.elapsedTime += dt;
+      this.remainingTime = Math.max(0, TIMER_CONFIG.initialSeconds - this.elapsedTime);
+      if (this.remainingTime <= 0) {
+        this.timeOut();
+        return;
+      }
+    }
 
     if (!this.isAirborne) {
       Sound.updateGallop(dt, speed);
@@ -1349,11 +1507,14 @@ class Game {
       /* Collision: horse at X=0, check X proximity and height */
       const hX = Math.abs(h.x);
       const inRange = hX < GC.collision.hurdleHalfX;
+
+      if (inRange && !h.attempted) {
+        h.attempted = true;
+        this.hurdlesAttempted++;
+      }
+
       if (inRange && this.state === STATE.PLAYING && this.timePlayed > GC.player.gracePeriod) {
-        // Horse bottom must be ABOVE the rail to clear it
-        // horseBottom = lowest point of horse collision box
         const horseBottom = GC.collision.horseBoxY0 + this.jumpY;
-        // Horse cleared if its bottom is above the rail
         const cleared = horseBottom >= h.height;
         if (!cleared) {
           this.gameOver();
@@ -1364,6 +1525,7 @@ class Game {
       /* Cleared: hurdle passed horse */
       if (!h.cleared && h.x < -GC.collision.hurdleHalfX - 0.5) {
         h.cleared = true;
+        this.firstHurdlePassed = true;
         this.hurdlesCleared++;
         const gain = 100 / GC.progression.totalHurdles;
         this.addProgress(gain);
@@ -1378,6 +1540,8 @@ class Game {
         this.hurdles.splice(i, 1);
       }
     }
+
+    updateHUD(this);
   }
 
   loop(now) {
@@ -1413,8 +1577,23 @@ function updateHUD(game) {
   const pct = Math.floor(game.progress);
   document.getElementById('progressPill').innerHTML = `PROGRESS: <b>${pct}%</b>`;
   document.getElementById('progressFill').style.width = pct + '%';
-  const reward = calculateReward(game.progress);
+  
+  const stats = game.getStats ? game.getStats() : { firstHurdlePassed: game.hurdlesCleared > 0 };
+  const reward = calculateReward(game.progress, game.elapsedTime, game.remainingTime, stats);
   document.getElementById('rewardPill').innerHTML = `REWARD: <b>${reward}% OFF</b>`;
+
+  // Timer HUD update
+  const timerPill = document.getElementById('timerPill');
+  const timerVal  = document.getElementById('timerVal');
+  if (timerPill && timerVal) {
+    const sec = Math.max(0, game.remainingTime);
+    const m = Math.floor(sec / 60);
+    const s = (sec % 60).toFixed(2);
+    timerVal.textContent = `${m.toString().padStart(2,'0')}:${s.padStart(5,'0')}`;
+    
+    timerPill.classList.toggle('warning', sec <= TIMER_CONFIG.warningSeconds && sec > TIMER_CONFIG.criticalSeconds);
+    timerPill.classList.toggle('critical', sec <= TIMER_CONFIG.criticalSeconds);
+  }
 }
 
 function setModeUI(hard) {
@@ -1457,6 +1636,8 @@ function showScreen(id) {
   document.getElementById('btnStart').addEventListener('click', () => game.start());
   document.getElementById('btnRetry').addEventListener('click', () => game.start());
   document.getElementById('btnVictoryRestart').addEventListener('click', () => game.start());
+  const btnTimeout = document.getElementById('btnTimeoutRetry');
+  if (btnTimeout) btnTimeout.addEventListener('click', () => game.start());
 
   document.getElementById('startHint').style.display = 'none';
 
