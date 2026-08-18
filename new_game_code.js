@@ -71,12 +71,12 @@ const GC = {
     completion: 100,
   },
   difficulty: [
-    { minPct: 0,   speed: 8.5, gapMs: [2400, 3600], railH: 0.95 },
-    { minPct: 10,  speed: 9.5, gapMs: [2100, 3200], railH: 1.02 },
-    { minPct: 25,  speed: 11.5,gapMs: [1800, 2700], railH: 1.10 },
-    { minPct: 50,  speed: 15.0,gapMs: [1400, 2200], railH: 1.22 }, // HARD MODE
-    { minPct: 75,  speed: 18.5,gapMs: [1200, 1800], railH: 1.32 },
-    { minPct: 90,  speed: 21.0,gapMs: [1000, 1500], railH: 1.40 },
+    { minPct: 0,   speed: 13.5, gapMs: [1400, 2200], railH: 1.05 }, // Fast speed right from game start!
+    { minPct: 10,  speed: 14.5, gapMs: [1300, 2000], railH: 1.10 },
+    { minPct: 25,  speed: 16.0, gapMs: [1200, 1800], railH: 1.18 },
+    { minPct: 50,  speed: 18.5, gapMs: [1000, 1500], railH: 1.28 }, // HARD MODE
+    { minPct: 75,  speed: 21.0, gapMs: [900,  1350], railH: 1.35 },
+    { minPct: 90,  speed: 23.5, gapMs: [800,  1200], railH: 1.42 },
   ],
 };
 
@@ -1305,7 +1305,7 @@ class Game {
     this.remainingTime = TIMER_CONFIG.initialSeconds;
 
     this.hurdles = [];
-    this.spawnTimer = 2400; // initial delay ~2.4s before first hurdle arrives
+    this.spawnTimer = 1200; // fast initial delay ~1.2s before first hurdle arrives
     this.timePlayed = 0;
     this.jumpY  = 0;
     this.jumpVY = 0;
@@ -1425,7 +1425,24 @@ class Game {
 
   spawnHurdle() {
     const diff = this.getDiff();
-    const railH = diff.railH + (Math.random() * 0.08 - 0.04);
+    
+    // Mismatched hurdle height pattern: alternate small/low, medium, and tall hurdles
+    const typePattern = [0, 2, 0, 1, 2, 1, 0, 2]; // 0=small/low, 1=medium, 2=tall
+    const hurdleIndex = this.hurdlesAttempted + this.hurdles.length;
+    const hType = typePattern[hurdleIndex % typePattern.length];
+
+    let railH = 1.05;
+    if (hType === 0) {
+      // Small/Low hurdle
+      railH = 0.82 + Math.random() * 0.06;
+    } else if (hType === 1) {
+      // Medium hurdle
+      railH = 1.08 + Math.random() * 0.08;
+    } else {
+      // Tall hurdle
+      railH = 1.32 + Math.random() * 0.10;
+    }
+
     const style = Math.floor(Math.random() * 5); // 5 visual hurdle variations
     this.hurdles.push({
       x:       GC.world.spawnX,
