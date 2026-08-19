@@ -47,6 +47,21 @@
       .form-control:focus{border-color:#5c2400;box-shadow:0 0 0 2px rgba(92,36,0,0.2);}
       .form-note{font-size:11px;color:#554433;margin-top:3px;line-height:1.35;font-weight:600;text-align:left;}
       .reg-error{color:#d32f2f;font-size:12px;margin-top:4px;min-height:16px;text-align:center;font-weight:700;}
+      
+      .rules-box{
+        background:rgba(255,255,255,0.75);
+        border:1px solid rgba(150,104,52,0.35);
+        border-radius:10px;
+        padding:10px 12px;
+        margin-bottom:12px;
+        text-align:left;
+      }
+      .rules-title{font-size:11px;font-weight:800;letter-spacing:0.06em;color:#2b1408;margin-bottom:6px;text-transform:uppercase;}
+      .rules-grid{display:flex;flex-direction:column;gap:6px;font-size:11px;color:#332211;line-height:1.35;}
+      .rule-item{display:flex;align-items:flex-start;gap:8px;}
+      .rule-icon{font-size:13px;flex-shrink:0;}
+      .kbd-sm{background:#2b1408;color:#ffe89c;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;font-family:monospace;}
+
       .venue-notice{
         background:linear-gradient(135deg, rgba(232,205,130,0.35), rgba(214,168,104,0.2));
         border:1.5px solid rgba(150,104,52,0.45);
@@ -97,11 +112,38 @@
 
     <!-- REGISTRATION SCREEN (FIRST SCREEN) -->
     <div class="overlay active" id="screenRegister">
-      <div class="card">
+      <div class="card" style="max-width:440px;">
         <div class="eyebrow">ROYAL CHAMPIONSHIP DERBY &bull; REGISTRATION</div>
-        <h1>Player Registration</h1>
-        <p style="margin-bottom:14px; color:#443322;">Enter your details to enter the Derby. <b>Note:</b> Each player (Email / Mobile) gets <b>1 single attempt</b>.</p>
+        <h1 style="margin-bottom:6px;">Player Registration</h1>
         
+        <!-- RULES & HOW TO PLAY -->
+        <div class="rules-box">
+          <div class="rules-title">🎮 HOW TO PLAY & DISCOUNT RULES</div>
+          <div class="rules-grid">
+            <div class="rule-item">
+              <span class="rule-icon">🏇</span>
+              <div>
+                <strong>Controls:</strong> Press <span class="kbd-sm">SPACE</span> / <span class="kbd-sm">↑</span> or tap <span class="kbd-sm">JUMP</span> to clear hurdles. Press <span class="kbd-sm">C</span> to switch camera view, <span class="kbd-sm">P</span> to pause.
+              </div>
+            </div>
+            <div class="rule-item">
+              <span class="rule-icon">🎯</span>
+              <div>
+                <strong>3 Attempts Total:</strong> Each participant gets <b>up to 3 attempts</b>. You can retry to improve your score or keep your best discount.
+              </div>
+            </div>
+            <div class="rule-item">
+              <span class="rule-icon">🏷️</span>
+              <div>
+                <strong>Discount Tiers:</strong><br>
+                &bull; <b>0% OFF</b>: Miss 1st hurdle or 0 hurdles cleared<br>
+                &bull; <b>1% &ndash; 14% OFF</b>: Scaled based on distance & accuracy<br>
+                &bull; <b>15% OFF (MAX)</b>: Complete 100% of championship course!
+              </div>
+            </div>
+          </div>
+        </div>
+
         <form id="regForm" onsubmit="return false;" style="width:100%;">
           <div class="form-group">
             <label for="regName">Full Name</label>
@@ -110,14 +152,10 @@
           <div class="form-group">
             <label for="regMobile">Mobile Number</label>
             <input type="tel" id="regMobile" class="form-control" placeholder="Enter 10-digit mobile number" required pattern="[0-9]{10}">
-            <div class="form-note">ℹ️ Note: Your mobile number will be verified at the venue upon discount code redemption.</div>
-          </div>
-          <div class="form-group">
-            <label for="regEmail">Email Address</label>
-            <input type="email" id="regEmail" class="form-control" placeholder="Enter your email ID" required>
+            <div class="form-note">ℹ️ Note: Mobile number will be verified at the venue upon discount redemption.</div>
           </div>
           <div class="reg-error" id="regError"></div>
-          <button type="submit" class="btn gold" id="btnRegister" style="margin-top:8px;">CONTINUE TO RACE</button>
+          <button type="submit" class="btn gold" id="btnRegister" style="margin-top:6px;">CONTINUE TO RACE</button>
         </form>
       </div>
     </div>
@@ -139,9 +177,9 @@
     <!-- ALREADY PLAYED / BLOCKED SCREEN -->
     <div class="overlay" id="screenBlocked">
       <div class="card">
-        <div class="eyebrow">ATTEMPT EXHAUSTED</div>
-        <h1>Already Played!</h1>
-        <p>Our records show that this mobile number or email address has already completed their ride. This derby is a <b>one-time entry</b> event.</p>
+        <div class="eyebrow">DERBY ENTRY COMPLETE</div>
+        <h1>Ride Completed!</h1>
+        <p>Our records show that this mobile number has completed its 3 attempts or claimed its final discount reward.</p>
         <div class="stat-row" style="margin-bottom:10px;">
           <div class="stat-box" style="grid-column: span 3; text-align:center; padding:10px;">
             <div class="label">REGISTERED PARTICIPANT</div>
@@ -151,7 +189,7 @@
         </div>
         <div class="stat-row">
           <div class="stat-box" style="grid-column: span 3;">
-            <div class="label">EARNED DISCOUNT</div>
+            <div class="label">BEST EARNED DISCOUNT</div>
             <div class="value" id="blockedReward" style="color:var(--gold-light,#f0d089);">0% OFF</div>
           </div>
         </div>
@@ -159,7 +197,7 @@
           📸 <strong>REDEMPTION NOTICE:</strong><br>
           Take a screenshot of this discount screen and show it at the venue ticket counter to redeem your discount!
         </div>
-        <div class="badge-completed">✅ ONE-TIME ATTEMPT COMPLETED</div>
+        <div class="badge-completed">✅ ALL ATTEMPTS COMPLETED</div>
       </div>
     </div>
 
@@ -190,11 +228,18 @@
           <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="overAccuracy">0%</div></div>
           <div class="stat-box"><div class="label">REWARD</div><div class="value" id="overReward">0% OFF</div></div>
         </div>
-        <div class="venue-notice">
+        <div id="overAttemptInfo" style="margin-top:10px; font-size:12px; color:#2b1408; font-weight:700; background:rgba(232,205,130,0.35); padding:8px 10px; border-radius:8px; border:1px solid rgba(150,104,52,0.3); text-align:center;">
+          Attempt 1 of 3 &bull; 2 Attempts Remaining
+        </div>
+        <div id="overActionsWrap" style="margin-top:10px; width:100%; display:flex; flex-direction:column; gap:6px;">
+          <button class="btn gold" id="btnRetryOver">RETRY FOR HIGHER DISCOUNT</button>
+          <button class="btn" id="btnClaimOver" style="background:#2b1408; color:#ffe89c; border:1px solid rgba(232,205,130,0.5);">CLAIM &amp; KEEP THIS DISCOUNT</button>
+        </div>
+        <div class="venue-notice" id="overNotice" style="display:none;">
           📸 <strong>IMPORTANT NOTE FOR REDEMPTION:</strong><br>
           Take a screenshot of this screen now and show this at the venue for discount redemption!
         </div>
-        <div class="badge-completed">✅ ONE-TIME RIDE COMPLETED</div>
+        <div class="badge-completed" id="overBadge" style="display:none;">✅ RIDE COMPLETED</div>
       </div>
     </div>
 
@@ -209,30 +254,37 @@
           <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="timeAccuracy">0%</div></div>
           <div class="stat-box"><div class="label">REWARD</div><div class="value" id="timeReward">0% OFF</div></div>
         </div>
-        <div class="venue-notice">
+        <div id="timeAttemptInfo" style="margin-top:10px; font-size:12px; color:#2b1408; font-weight:700; background:rgba(232,205,130,0.35); padding:8px 10px; border-radius:8px; border:1px solid rgba(150,104,52,0.3); text-align:center;">
+          Attempt 1 of 3 &bull; 2 Attempts Remaining
+        </div>
+        <div id="timeActionsWrap" style="margin-top:10px; width:100%; display:flex; flex-direction:column; gap:6px;">
+          <button class="btn gold" id="btnRetryTimeout">RETRY FOR HIGHER DISCOUNT</button>
+          <button class="btn" id="btnClaimTimeout" style="background:#2b1408; color:#ffe89c; border:1px solid rgba(232,205,130,0.5);">CLAIM &amp; KEEP THIS DISCOUNT</button>
+        </div>
+        <div class="venue-notice" id="timeNotice" style="display:none;">
           📸 <strong>IMPORTANT NOTE FOR REDEMPTION:</strong><br>
           Take a screenshot of this screen now and show this at the venue for discount redemption!
         </div>
-        <div class="badge-completed">✅ ONE-TIME RIDE COMPLETED</div>
+        <div class="badge-completed" id="timeBadge" style="display:none;">✅ RIDE COMPLETED</div>
       </div>
     </div>
 
     <!-- VICTORY SCREEN -->
     <div class="overlay" id="screenVictory">
       <div class="card">
-        <div class="eyebrow">COURSE COMPLETE</div>
-        <h1>Championship Round!</h1>
-        <p>Exceptional ride! Here is your official discount result.</p>
+        <div class="eyebrow">MAX DISCOUNT ACHIEVED!</div>
+        <h1>Championship Victory!</h1>
+        <p>🎉 Exceptional ride! You unlocked the maximum <b>15% OFF</b> discount reward!</p>
         <div class="stat-row">
           <div class="stat-box"><div class="label">TIME</div><div class="value" id="victoryTime">00:00</div></div>
           <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="victoryAccuracy">0%</div></div>
-          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="victoryReward">0% OFF</div></div>
+          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="victoryReward" style="color:var(--gold-light,#f0d089);">15% OFF</div></div>
         </div>
-        <div class="venue-notice">
+        <div class="venue-notice" style="display:block;">
           📸 <strong>IMPORTANT NOTE FOR REDEMPTION:</strong><br>
           Take a screenshot of this screen now and show this at the venue for discount redemption!
         </div>
-        <div class="badge-completed">🏆 CHAMPIONSHIP COMPLETED</div>
+        <div class="badge-completed">🏆 15% MAX REWARD UNLOCKED</div>
       </div>
     </div>
   </div>

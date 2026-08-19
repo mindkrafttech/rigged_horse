@@ -2602,23 +2602,32 @@ if (typeof window !== 'undefined' && window.supabase && window.supabase.createCl
   } catch (e) { console.error('Supabase init error:', e); }
 }
 
-async function checkExistingPlayer(email, mobile) {
-  if (!supabase) return null;
-  const cleanEmail = (email || '').trim().toLowerCase();
+async function checkExistingPlayer(mobile) {
   const cleanMobile = (mobile || '').trim();
-  if (!cleanEmail && !cleanMobile) return null;
+  if (!cleanMobile) return null;
+
+  // Check local storage first
+  try {
+    const raw = localStorage.getItem('derby_player_' + cleanMobile);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && (parsed.completed || parsed.attempts_used >= 3)) return parsed;
+    }
+  } catch(e){}
+
+  if (!supabase) return null;
 
   try {
     const { data, error } = await supabase
       .from('game_registrations')
       .select('*')
-      .or(`email.eq.${cleanEmail},mobile.eq.${cleanMobile}`);
+      .eq('mobile', cleanMobile);
 
     if (error) {
       const { data: fallbackData } = await supabase
         .from('registrations')
         .select('*')
-        .or(`email.eq.${cleanEmail},mobile.eq.${cleanMobile}`);
+        .eq('mobile', cleanMobile);
       if (fallbackData && fallbackData.length > 0) return fallbackData[0];
       return null;
     }
@@ -2630,18 +2639,21 @@ async function checkExistingPlayer(email, mobile) {
   }
 }
 
-async function savePlayerRecord(name, mobile, email) {
-  const cleanEmail = (email || '').trim().toLowerCase();
+async function savePlayerRecord(name, mobile) {
   const cleanMobile = (mobile || '').trim();
   const cleanName = (name || '').trim();
   const record = {
     name: cleanName,
     mobile: cleanMobile,
-    email: cleanEmail,
-    reward: 'Pending',
-    progress: 0,
+    attempts_used: 0,
+    best_reward: '0% OFF',
+    completed: false,
     created_at: new Date().toISOString()
   };
+
+  try {
+    localStorage.setItem('derby_player_' + cleanMobile, JSON.stringify(record));
+  } catch(e){}
 
   if (!supabase) return record;
 
@@ -2660,35 +2672,64 @@ async function savePlayerRecord(name, mobile, email) {
   }
 }
 
-async function updatePlayerResult(email, mobile, stats) {
-  const cleanEmail = (email || '').trim().toLowerCase();
+async function updatePlayerResult(mobile, stats, isClaimed = false) {
   const cleanMobile = (mobile || '').trim();
-  if (!cleanEmail && !cleanMobile) return;
+  if (!cleanMobile) return null;
 
-  const rewardStr = (stats.reward !== undefined) ? (stats.reward + '% OFF') : '0% OFF';
+  const currentRewardNum = stats.reward || 0;
+  let existing = await checkExistingPlayer(cleanMobile);
+
+  let attemptsUsed = existing ? (existing.attempts_used || 0) : 0;
+  let bestRewardNum = 0;
+  if (existing && existing.best_reward) {
+    const parsed = parseInt(existing.best_reward);
+    if (!isNaN(parsed)) bestRewardNum = parsed;
+  }
+
+  const newBestNum = Math.max(bestRewardNum, currentRewardNum);
+  const newAttempts = Math.min(3, attemptsUsed + 1);
+  const completed = isClaimed || newBestNum >= 15 || newAttempts >= 3;
+  const bestRewardStr = newBestNum + '% OFF';
+
   const updateData = {
-    reward: rewardStr,
+    attempts_used: newAttempts,
+    best_reward: bestRewardStr,
+    reward: bestRewardStr,
+    completed: completed,
     progress: stats.progress || 0,
     accuracy: Math.round((stats.accuracy || 0) * 100),
     completed_at: new Date().toISOString()
   };
 
-  if (!supabase) return;
+  try {
+    const localObj = {
+      name: existing ? existing.name : '',
+      mobile: cleanMobile,
+      attempts_used: newAttempts,
+      best_reward: bestRewardStr,
+      completed: completed
+    };
+    localStorage.setItem('derby_player_' + cleanMobile, JSON.stringify(localObj));
+  } catch(e){}
+
+  if (!supabase) return updateData;
 
   try {
     let { error } = await supabase
       .from('game_registrations')
       .update(updateData)
-      .or(`email.eq.${cleanEmail},mobile.eq.${cleanMobile}`);
+      .eq('mobile', cleanMobile);
     if (error) {
       await supabase
         .from('registrations')
         .update(updateData)
-        .or(`email.eq.${cleanEmail},mobile.eq.${cleanMobile}`);
+        .eq('mobile', cleanMobile);
     }
   } catch (err) {
     console.error('Update player result error:', err);
   }
+
+  return updateData;
 }
 
 /* ========================= GAME CLASS ===================================== */
@@ -2870,17 +2911,21 @@ class Game {
     };
   }
 
-  _handleRunFinished(stats) {
-    if (this.player && (this.player.email || this.player.mobile)) {
-      updatePlayerResult(this.player.email, this.player.mobile, stats);
-      try {
-        if (this.player.email) localStorage.setItem('derby_completed_' + this.player.email.toLowerCase(), 'true');
-        if (this.player.mobile) localStorage.setItem('derby_completed_' + this.player.mobile, 'true');
-      } catch(e){}
+  async _handleRunFinished(stats, isClaimed = false) {
+    if (this.player && this.player.mobile) {
+      const resData = await updatePlayerResult(this.player.mobile, stats, isClaimed);
+      if (resData) {
+        if (this.player.attempts_used !== undefined) {
+          this.player.attempts_used = resData.attempts_used;
+        }
+        if (this.player.best_reward !== undefined) {
+          this.player.best_reward = resData.best_reward;
+        }
+      }
     }
   }
 
-  gameOver() {
+  async gameOver() {
     this.state = STATE.GAME_OVER;
     this.animState = ANIM.HIT;
     Sound.hit();
@@ -2891,8 +2936,8 @@ class Game {
     const reward = calculateReward(this.progress, this.elapsedTime, this.remainingTime, stats);
     stats.reward = reward;
     this.lastResultData = stats;
-    this._handleRunFinished(stats);
-    console.log('🏁 GAME OVER RESULT:', stats);
+
+    const resData = await updatePlayerResult(this.player ? this.player.mobile : '', stats, false);
 
     document.getElementById('overProgress').textContent = stats.progress + '%';
     document.getElementById('overAccuracy').textContent = Math.round(stats.accuracy * 100) + '%';
@@ -2906,10 +2951,11 @@ class Game {
       document.getElementById('overDesc').textContent = 'The horse caught the rail. Here is your earned discount.';
     }
 
+    this.renderResultCardUI('over', reward, resData);
     setTimeout(() => showScreen('screenOver'), 500);
   }
 
-  timeOut() {
+  async timeOut() {
     this.state = STATE.TIMEOUT;
     Sound.stopGallop();
     Sound.stopMusic();
@@ -2918,17 +2964,18 @@ class Game {
     const reward = calculateReward(this.progress, this.elapsedTime, 0, stats);
     stats.reward = reward;
     this.lastResultData = stats;
-    this._handleRunFinished(stats);
-    console.log('🏁 TIMEOUT RESULT:', stats);
+
+    const resData = await updatePlayerResult(this.player ? this.player.mobile : '', stats, false);
 
     document.getElementById('timeProgress').textContent = stats.progress + '%';
     document.getElementById('timeAccuracy').textContent = Math.round(stats.accuracy * 100) + '%';
     document.getElementById('timeReward').textContent = reward + '% OFF';
 
+    this.renderResultCardUI('time', reward, resData);
     setTimeout(() => showScreen('screenTimeout'), 400);
   }
 
-  victory() {
+  async victory() {
     this.state = STATE.VICTORY;
     if (this.env.onVictory) this.env.onVictory();
     Sound.victory();
@@ -2936,17 +2983,62 @@ class Game {
     Sound.stopMusic();
 
     const stats = this.getStats();
-    const reward = calculateReward(100, this.elapsedTime, this.remainingTime, stats);
+    const reward = 15;
     stats.reward = reward;
     this.lastResultData = stats;
-    this._handleRunFinished(stats);
-    console.log('🏁 VICTORY RESULT:', stats);
+
+    await updatePlayerResult(this.player ? this.player.mobile : '', stats, true);
 
     document.getElementById('victoryTime').textContent = stats.elapsedTime + 's';
     document.getElementById('victoryAccuracy').textContent = Math.round(stats.accuracy * 100) + '%';
-    document.getElementById('victoryReward').textContent = reward + '% OFF';
+    document.getElementById('victoryReward').textContent = '15% OFF';
 
     setTimeout(() => showScreen('screenVictory'), 350);
+  }
+
+  renderResultCardUI(prefix, currentReward, resData) {
+    const attempts = resData ? resData.attempts_used : 1;
+    const bestRewardStr = resData ? resData.best_reward : (currentReward + '% OFF');
+    const isCompleted = resData ? resData.completed : false;
+
+    const infoEl = document.getElementById(prefix + 'AttemptInfo');
+    const actionsEl = document.getElementById(prefix + 'ActionsWrap');
+    const noticeEl = document.getElementById(prefix + 'Notice');
+    const badgeEl = document.getElementById(prefix + 'Badge');
+
+    if (currentReward >= 15 || isCompleted || attempts >= 3) {
+      if (infoEl) infoEl.textContent = `All 3 Attempts Completed • Best Discount: ${bestRewardStr}`;
+      if (actionsEl) actionsEl.style.display = 'none';
+      if (noticeEl) noticeEl.style.display = 'block';
+      if (badgeEl) {
+        badgeEl.style.display = 'inline-block';
+        badgeEl.textContent = (currentReward >= 15) ? '🏆 15% MAX REWARD UNLOCKED' : '✅ ALL ATTEMPTS COMPLETED';
+      }
+    } else {
+      const remaining = 3 - attempts;
+      if (infoEl) {
+        infoEl.textContent = `Attempt ${attempts} of 3 Completed • ${remaining} ${remaining === 1 ? 'Attempt' : 'Attempts'} Remaining (Best: ${bestRewardStr})`;
+      }
+      if (actionsEl) actionsEl.style.display = 'flex';
+      if (noticeEl) noticeEl.style.display = 'none';
+      if (badgeEl) badgeEl.style.display = 'none';
+    }
+  }
+
+  async claimDiscount(prefix) {
+    const stats = this.lastResultData || this.getStats();
+    if (this.player && this.player.mobile) {
+      await updatePlayerResult(this.player.mobile, stats, true);
+    }
+    const actionsEl = document.getElementById(prefix + 'ActionsWrap');
+    const noticeEl = document.getElementById(prefix + 'Notice');
+    const badgeEl = document.getElementById(prefix + 'Badge');
+    if (actionsEl) actionsEl.style.display = 'none';
+    if (noticeEl) noticeEl.style.display = 'block';
+    if (badgeEl) {
+      badgeEl.style.display = 'inline-block';
+      badgeEl.textContent = '✅ DISCOUNT CLAIMED & LOCKED';
+    }
   }
 
   setProgress(val) {
@@ -3255,9 +3347,8 @@ function showScreen(id) {
       e.preventDefault();
       const name = document.getElementById('regName').value.trim();
       const mobile = document.getElementById('regMobile').value.trim();
-      const email = document.getElementById('regEmail').value.trim();
 
-      if (!name || !mobile || !email) {
+      if (!name || !mobile) {
         if (regError) regError.textContent = 'Please fill out all registration fields.';
         return;
       }
@@ -3272,29 +3363,30 @@ function showScreen(id) {
         btnRegister.textContent = 'VERIFYING...';
       }
 
-      const localPlayed = (email && localStorage.getItem('derby_completed_' + email.toLowerCase())) ||
-                          (mobile && localStorage.getItem('derby_completed_' + mobile));
-      const existing = await checkExistingPlayer(email, mobile);
+      const existing = await checkExistingPlayer(mobile);
 
       if (btnRegister) {
         btnRegister.disabled = false;
         btnRegister.textContent = 'CONTINUE TO RACE';
       }
 
-      if (localPlayed || existing) {
-        const prevReward = existing ? (existing.reward || '0% OFF') : '0% OFF';
-        const prevName = existing ? (existing.name || name) : name;
+      if (existing && (existing.completed || (existing.attempts_used >= 3))) {
+        const prevReward = existing.best_reward || existing.reward || '0% OFF';
+        const prevName = existing.name || name;
         const pName = document.getElementById('blockedPlayerName');
         const pInfo = document.getElementById('blockedPlayerInfo');
         const pRew = document.getElementById('blockedReward');
         if (pName) pName.textContent = prevName;
-        if (pInfo) pInfo.textContent = `${mobile} • ${email}`;
+        if (pInfo) pInfo.textContent = `Mobile: ${mobile}`;
         if (pRew) pRew.textContent = prevReward;
         showScreen('screenBlocked');
         return;
       }
 
-      const playerRecord = await savePlayerRecord(name, mobile, email);
+      let playerRecord = existing;
+      if (!playerRecord) {
+        playerRecord = await savePlayerRecord(name, mobile);
+      }
       game.player = playerRecord;
       showScreen('screenStart');
     });
@@ -3302,6 +3394,18 @@ function showScreen(id) {
 
   const btnStart = document.getElementById('btnStart');
   if (btnStart) btnStart.addEventListener('click', () => game.start());
+
+  // Retry / Claim listeners for Game Over card
+  const btnRetryOver = document.getElementById('btnRetryOver');
+  if (btnRetryOver) btnRetryOver.addEventListener('click', () => game.start());
+  const btnClaimOver = document.getElementById('btnClaimOver');
+  if (btnClaimOver) btnClaimOver.addEventListener('click', () => game.claimDiscount('over'));
+
+  // Retry / Claim listeners for Timeout card
+  const btnRetryTimeout = document.getElementById('btnRetryTimeout');
+  if (btnRetryTimeout) btnRetryTimeout.addEventListener('click', () => game.start());
+  const btnClaimTimeout = document.getElementById('btnClaimTimeout');
+  if (btnClaimTimeout) btnClaimTimeout.addEventListener('click', () => game.claimDiscount('time'));
 
   document.getElementById('startHint').style.display = 'none';
 
