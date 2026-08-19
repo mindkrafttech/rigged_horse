@@ -2677,11 +2677,13 @@ async function checkExistingPlayer(mobile) {
 async function savePlayerRecord(name, mobile) {
   const cleanMobile = (mobile || '').trim();
   const cleanName = (name || '').trim();
+  const initialCoupon = generateCouponCode(0, cleanMobile);
   const record = {
     name: cleanName,
     mobile: cleanMobile,
     attempts_used: 0,
     best_reward: '0% OFF',
+    coupon_code: initialCoupon,
     completed: false,
     created_at: new Date().toISOString()
   };
@@ -2697,6 +2699,7 @@ async function savePlayerRecord(name, mobile) {
       mobile: cleanMobile,
       attempts_used: 0,
       best_reward: '0% OFF',
+      coupon_code: initialCoupon,
       completed: false,
       progress: 0,
       accuracy: 0
@@ -2722,14 +2725,16 @@ async function updatePlayerResult(mobile, stats, isClaimed = false) {
 
   const newBestNum = Math.max(bestRewardNum, currentRewardNum);
   const newAttempts = Math.min(3, attemptsUsed + 1);
-  const completed = isClaimed || newBestNum >= 15 || newAttempts >= 3;
+  const completed = isClaimed || newBestNum >= 20 || newAttempts >= 3;
   const bestRewardStr = newBestNum + '% OFF';
+  const couponCode = generateCouponCode(newBestNum, cleanMobile);
 
   const localObj = {
     name: (existing && existing.name) ? existing.name : '',
     mobile: cleanMobile,
     attempts_used: newAttempts,
     best_reward: bestRewardStr,
+    coupon_code: couponCode,
     completed: completed
   };
 
@@ -2744,6 +2749,7 @@ async function updatePlayerResult(mobile, stats, isClaimed = false) {
       mobile: cleanMobile,
       attempts_used: newAttempts,
       best_reward: bestRewardStr,
+      coupon_code: couponCode,
       completed: completed,
       progress: stats.progress || 0,
       accuracy: Math.round((stats.accuracy || 0) * 100)
