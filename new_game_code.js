@@ -3058,10 +3058,11 @@ class Game {
     const noticeEl = document.getElementById(prefix + 'Notice');
     const badgeEl = document.getElementById(prefix + 'Badge');
 
+    if (noticeEl) noticeEl.style.display = 'block';
+
     if (currentReward >= 20 || isCompleted || attempts >= 3) {
       if (infoEl) infoEl.textContent = `All 3 Attempts Completed • Best Discount: ${bestRewardStr}`;
       if (actionsEl) actionsEl.style.display = 'none';
-      if (noticeEl) noticeEl.style.display = 'block';
       if (badgeEl) {
         badgeEl.style.display = 'inline-block';
         badgeEl.textContent = (currentReward >= 20) ? '🏆 20% MAX REWARD UNLOCKED' : '✅ ALL ATTEMPTS COMPLETED';
@@ -3072,7 +3073,6 @@ class Game {
         infoEl.textContent = `Attempt ${attempts} of 3 Completed • ${remaining} ${remaining === 1 ? 'Attempt' : 'Attempts'} Remaining (Best: ${bestRewardStr})`;
       }
       if (actionsEl) actionsEl.style.display = 'flex';
-      if (noticeEl) noticeEl.style.display = 'none';
       if (badgeEl) badgeEl.style.display = 'none';
     }
   }
