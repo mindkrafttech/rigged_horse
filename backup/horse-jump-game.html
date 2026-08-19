@@ -6,17 +6,19 @@
 <title>Clear the Course — Horse Jump Challenge</title>
 <style>
   :root{
-    --ink:#1b2430;
-    --cream:#f6f1e6;
-    --field-green:#3f6b3f;
-    --gold:#c9a24b;
-    --gold-light:#e8cd82;
-    --maroon:#7a2331;
-    --maroon-dark:#5a1521;
-    --sky-top:#bfe0ee;
-    --panel:#12181f;
+    --ink:#150a22;
+    --cream:#f4ecd8;
+    --field-green:#2f5c2e;
+    --gold:#d8b45a;
+    --gold-light:#f3dc9a;
+    --maroon:#6d1230;
+    --maroon-dark:#4d0c20;
+    --royal:#2e1140;
+    --royal-light:#4a2064;
+    --sky-top:#5b2a63;
+    --panel:#1d0a2b;
     --success:#4a8b5c;
-    --danger:#a3384a;
+    --danger:#c23b57;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html,body{
@@ -29,7 +31,7 @@
   #app{
     position:fixed;inset:0;
     display:flex;align-items:center;justify-content:center;
-    background:linear-gradient(180deg,#0e141b 0%,#1b2430 100%);
+    background:linear-gradient(180deg,#100722 0%,#241036 100%);
   }
   #stage{
     position:relative;
@@ -64,7 +66,7 @@
   }
   .hud-row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
   .hud-pill{
-    background:rgba(18,24,31,.72);
+    background:rgba(29,10,43,.74);
     border:1px solid rgba(232,205,130,.45);
     border-radius:999px;
     padding:5px 12px;
@@ -81,7 +83,7 @@
   #progressWrap{
     flex:1;
     height:16px;
-    background:rgba(18,24,31,.72);
+    background:rgba(29,10,43,.74);
     border:1px solid rgba(232,205,130,.45);
     border-radius:999px;
     overflow:hidden;
@@ -142,7 +144,7 @@
   .overlay{
     position:absolute;inset:0;
     display:flex;align-items:center;justify-content:center;
-    background:radial-gradient(120% 100% at 50% 0%, rgba(20,26,20,.55), rgba(6,9,6,.88));
+    background:radial-gradient(120% 100% at 50% 0%, rgba(46,17,64,.62), rgba(9,4,16,.90));
     z-index:40;
     opacity:0; pointer-events:none;
     transition:opacity .35s ease;
@@ -263,7 +265,7 @@
   #muteBtn{
     position:absolute;left:14px;bottom:calc(14px + env(safe-area-inset-bottom));
     width:38px;height:38px;border-radius:50%;
-    background:rgba(18,24,31,.72);border:1px solid rgba(232,205,130,.45);
+    background:rgba(29,10,43,.74);border:1px solid rgba(232,205,130,.45);
     color:var(--gold-light);font-size:16px;
     display:flex;align-items:center;justify-content:center;
     z-index:35; cursor:pointer;

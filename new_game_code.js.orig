@@ -1,0 +1,2012 @@
+import * as THREE from 'three';
+
+/* =========================================================================
+   CLEAR THE COURSE — Three.js 2.5D HORSE JUMP GAME
+   Horse sprite + 3D environment hybrid
+   ========================================================================= */
+
+/* ----------------------------- GAME CONFIG -------------------------------- */
+/* =========================================================================
+   CENTRAL BUSINESS & GAMEPLAY CONFIGURATIONS
+   (Easy tuning for promotional reward rules, timer, difficulty & course)
+   ========================================================================= */
+
+const TIMER_CONFIG = {
+  enabled: true,
+  initialSeconds: 40.0,
+  warningSeconds: 10.0,
+  criticalSeconds: 5.0,
+  timeoutRewardMode: 'achieved_no_bonus', // 'achieved_no_bonus' | 'zero'
+};
+
+const DERBY_CONFIG = {
+  eventName: "CHAMPIONSHIP DERBY",
+  cupName: "GRAND DERBY CUP",
+  year: "2026",
+  banners: ["CHAMPIONSHIP DERBY", "GRAND DERBY CUP 2026", "FINAL RACE 2026", "DERBY CHAMPIONS"],
+};
+
+const REWARD_CONFIG = {
+  minimum: 0,                   // Minimum discount (0% if 1st hurdle missed)
+  maximum: 15,                  // MAXIMUM DISCOUNT CAP IS NOW 15% OFF!
+  discountPerHurdle: 1,         // 1% discount for each hurdle successfully cleared!
+  firstHurdleRequired: true,    // Failing 1st hurdle = 0% reward!
+};
+
+const GC = {
+  world: {
+    horseX: 0,        // horse fixed world X
+    groundY: 0,       // ground plane Y
+    spawnX: 34,       // hurdle spawn X ahead of horse
+    recycleX: -14,    // hurdle recycled when past here
+  },
+  player: {
+    jumpVelocity: 12.5,   // punchy upward velocity
+    gravity: 32,           // ultra high gravity for millisecond jump timing window
+    runFrameTime: 0.040,   // ultra fast gallop frame
+    idleFrameTime: 0.38,
+    horseHeight: 3.4,      // majestic horse height
+    horseAspect: 1.55,     // sprite width/height ratio
+    gracePeriod: 0.35,     // immediate timing requirement for 1st hurdle
+  },
+  collision: {
+    horseBoxY0: 0.35, // collision box bottom
+    horseBoxY1: 2.8,  // collision box top
+    hurdleHalfX: 0.45, // hurdle collision half-width in X
+  },
+  progression: {
+    totalHurdles: 25, // 25 hurdles total on course (clearing 15 ends game with 15% MAX discount!)
+    hardModeUnlock: 50,
+    completion: 100,
+  },
+  difficulty: [
+    { minPct: 0,   speed: 23.5, gapMs: [800,  1350], railH: 1.48 }, // BLAZING FAST starting speed & tall 1st hurdle!
+    { minPct: 10,  speed: 25.0, gapMs: [750,  1250], railH: 1.52 },
+    { minPct: 25,  speed: 27.0, gapMs: [700,  1100], railH: 1.55 },
+    { minPct: 50,  speed: 29.5, gapMs: [620,   950], railH: 1.60 }, // HARD MODE SPIKE
+    { minPct: 75,  speed: 31.5, gapMs: [550,   850], railH: 1.65 },
+    { minPct: 90,  speed: 33.5, gapMs: [480,   750], railH: 1.70 },
+  ],
+};
+
+/* ----------------------------- GAME STATES -------------------------------- */
+const STATE = { START: 0, PLAYING: 1, GAME_OVER: 2, VICTORY: 3, TIMEOUT: 4 };
+const ANIM  = { IDLE: 0, RUN: 1, JUMP: 2, HIT: 3 };
+
+/* ----------------------------- SOUND -------------------------------------- */
+const Sound = (() => {
+  let ctx = null;
+  let muted = false;
+  let gallopTimer = 0;
+  
+  // Optional audio element for custom gallop/music files
+  let customGallopAudio = null;
+  let customMusicAudio = null;
+  let hasCustomGallop = false;
+  let hasCustomMusic = false;
+
+  function ensure() {
+    if (!ctx) { 
+      try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){} 
+    }
+    if (ctx && ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  // Attempt to pre-load optional custom audio files from sprites/ or audio/ folder
+  try {
+    const gAudio = new Audio('sprites/gallop.mp3');
+    gAudio.loop = true;
+    gAudio.volume = 0.5;
+    gAudio.onerror = () => { hasCustomGallop = false; };
+    gAudio.addEventListener('canplaythrough', () => { customGallopAudio = gAudio; hasCustomGallop = true; });
+
+    const mAudio = new Audio('sprites/music.mp3');
+    mAudio.loop = true;
+    mAudio.volume = 0.4;
+    mAudio.onerror = () => { hasCustomMusic = false; };
+    mAudio.addEventListener('canplaythrough', () => { customMusicAudio = mAudio; hasCustomMusic = true; });
+  } catch(e){}
+
+  function tone(freq, dur, type='sine', gain=0.16, delay=0) {
+    if (muted) return;
+    const c = ensure(); if (!c) return;
+    try {
+      const t0 = c.currentTime + delay;
+      const osc = c.createOscillator(); const g = c.createGain();
+      osc.type = type; osc.frequency.setValueAtTime(freq, t0);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(gain, t0+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+      osc.connect(g).connect(c.destination); osc.start(t0); osc.stop(t0+dur+0.02);
+    } catch(e){}
+  }
+
+  // Synthesis of a single realistic horse hoofbeat on dirt/turf
+  function playHoofbeat(weight = 1.0, pitch = 1.0, delay = 0) {
+    if (muted) return;
+    const c = ensure(); if (!c) return;
+    try {
+      const t0 = c.currentTime + delay;
+      
+      // 1. Low thud (deep bass sweep simulating heavy hoof impact)
+      const osc = c.createOscillator();
+      const oscGain = c.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(160 * pitch, t0);
+      osc.frequency.exponentialRampToValueAtTime(35, t0 + 0.045);
+      oscGain.gain.setValueAtTime(0.35 * weight, t0);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.05);
+      osc.connect(oscGain).connect(c.destination);
+      osc.start(t0); osc.stop(t0 + 0.055);
+
+      // 2. Dirt crunch (bandpass filtered noise burst for turf scatter)
+      const bufferSize = Math.floor(c.sampleRate * 0.04);
+      const buffer = c.createBuffer(1, bufferSize, c.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+      }
+      const noise = c.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = c.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1100 * pitch, t0);
+      filter.Q.setValueAtTime(1.8, t0);
+
+      const noiseGain = c.createGain();
+      noiseGain.gain.setValueAtTime(0.22 * weight, t0);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.04);
+
+      noise.connect(filter).connect(noiseGain).connect(c.destination);
+      noise.start(t0); noise.stop(t0 + 0.045);
+    } catch(e){}
+  }
+
+  return {
+    jump() { 
+      this.stopGallop();
+      tone(520,0.14,'triangle',0.14); 
+      tone(760,0.1,'triangle',0.08,0.03); 
+    },
+    land() {
+      // Double hoof impact when landing from jump
+      playHoofbeat(1.4, 0.9, 0);
+      playHoofbeat(1.2, 1.05, 0.05);
+    },
+    clear()   { tone(880,0.12,'sine',0.14); tone(1160,0.14,'sine',0.12,0.06); },
+    hit()     { 
+      this.stopGallop();
+      tone(160,0.35,'sawtooth',0.18); 
+      tone(90,0.4,'square',0.12,0.05); 
+    },
+    hardMode(){ tone(300,0.15,'square',0.12); tone(450,0.15,'square',0.12,0.12); tone(600,0.22,'square',0.14,0.24); },
+    victory() { 
+      this.stopGallop();
+      [523,659,784,1046].forEach((f,i)=>tone(f,0.28,'sine',0.15,i*0.11)); 
+    },
+
+    updateGallop(dt, speed) {
+      if (muted) return;
+
+      // If custom audio file provided, play that instead!
+      if (hasCustomGallop && customGallopAudio) {
+        if (customGallopAudio.paused) customGallopAudio.play().catch(()=>{});
+        return;
+      }
+
+      // Procedural gallop rhythm engine (3-beat gallop gait)
+      const strideDuration = Math.max(0.24, 0.46 - (speed - 8) * 0.012);
+      gallopTimer += dt;
+      if (gallopTimer >= strideDuration) {
+        gallopTimer = 0;
+        playHoofbeat(0.8, 0.95, 0);
+        playHoofbeat(1.0, 1.05, strideDuration * 0.22);
+        playHoofbeat(0.75, 1.15, strideDuration * 0.42);
+      }
+    },
+
+    stopGallop() {
+      gallopTimer = 0;
+      if (customGallopAudio && !customGallopAudio.paused) {
+        customGallopAudio.pause();
+        customGallopAudio.currentTime = 0;
+      }
+    },
+
+    startMusic() {
+      if (muted) return;
+      if (hasCustomMusic && customMusicAudio && customMusicAudio.paused) {
+        customMusicAudio.play().catch(()=>{});
+      }
+    },
+
+    stopMusic() {
+      if (customMusicAudio && !customMusicAudio.paused) {
+        customMusicAudio.pause();
+        customMusicAudio.currentTime = 0;
+      }
+    },
+
+    setMuted(v) { 
+      muted = v; 
+      if (muted) {
+        this.stopGallop();
+        this.stopMusic();
+      }
+    },
+
+    isMuted() { return muted; },
+  };
+})();
+
+/* ----------------------------- REWARD FORMULA ----------------------------- */
+function calculateReward(progress, elapsedTime = 0, remainingTime = 40, stats = {}) {
+  const cleared = (stats && stats.hurdlesCleared !== undefined) ? stats.hurdlesCleared : 0;
+  const firstPassed = (stats && stats.firstHurdlePassed !== undefined) ? stats.firstHurdlePassed : (cleared > 0);
+
+  // Missing 1st hurdle = 0% discount
+  if (REWARD_CONFIG.firstHurdleRequired && !firstPassed) {
+    return 0;
+  }
+
+  // 1% discount for each hurdle successfully cleared!
+  const reward = cleared * REWARD_CONFIG.discountPerHurdle;
+  return Math.min(REWARD_CONFIG.maximum, Math.max(0, reward));
+}
+
+function getDifficulty(pct) {
+  const d = GC.difficulty;
+  for (let i = d.length - 1; i >= 0; i--) {
+    if (pct >= d[i].minPct) return d[i];
+  }
+  return d[0];
+}
+
+/* ----------------------------- ASSET LOADING & TEXTURES ------------------- */
+const SPRITES = {};
+const TEXTURES = {};
+
+// Procedural dirt runway canvas texture generator
+function createDirtTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#825c2d';
+  ctx.fillRect(0, 0, 512, 512);
+
+  // Directional dirt streaks & clay grain
+  for (let i = 0; i < 450; i++) {
+    const y = Math.random() * 512;
+    const h = 1 + Math.random() * 3;
+    const a = 0.05 + Math.random() * 0.14;
+    ctx.fillStyle = Math.random() > 0.5 ? `rgba(168, 124, 70, ${a})` : `rgba(82, 50, 20, ${a})`;
+    ctx.fillRect(0, y, 512, h);
+  }
+
+  // Fine sand noise
+  const img = ctx.getImageData(0, 0, 512, 512);
+  const data = img.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const n = (Math.random() - 0.5) * 24;
+    data[i]   = Math.max(0, Math.min(255, data[i] + n));
+    data[i+1] = Math.max(0, Math.min(255, data[i+1] + n));
+    data[i+2] = Math.max(0, Math.min(255, data[i+2] + n));
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(40, 1);
+  return tex;
+}
+
+// -----------------------------------------------------------------------
+// SPRITE CONFIGURATION
+// All horse animation frames are loaded from the sprites/ folder.
+// To replace any image, simply swap the corresponding PNG file in sprites/.
+// -----------------------------------------------------------------------
+const SPRITE_FILES = {
+  runA:  'sprites/runA.png',   // Gallop frame 1
+  runB:  'sprites/runB.png',   // Gallop frame 2
+  runC:  'sprites/runC.png',   // Gallop frame 3
+  jumpA: 'sprites/jumpA.png',  // Jump – takeoff
+  jumpB: 'sprites/jumpB.png',  // Jump – peak
+  jumpC: 'sprites/jumpC.png',  // Jump – landing
+  idleA: 'sprites/idleA.png',  // Idle frame 1
+  idleB: 'sprites/idleB.png',  // Idle frame 2
+};
+
+function loadImage(key, src) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload  = () => { SPRITES[key] = img; resolve(); };
+    img.onerror = () => { console.warn(`Could not load sprite: ${src}`); resolve(); };
+    img.src = src;
+  });
+}
+
+async function loadAllAssets() {
+  const jobs = Object.entries(SPRITE_FILES).map(([key, path]) => loadImage(key, path));
+  await Promise.all(jobs);
+
+  // Create Three.js textures from loaded images
+  for (const key of Object.keys(SPRITE_FILES)) {
+    if (SPRITES[key]) {
+      const tex = new THREE.Texture(SPRITES[key]);
+      tex.needsUpdate = true;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      TEXTURES[key] = tex;
+    }
+  }
+
+  // Set start screen hero image
+  if (SPRITES.jumpA) document.getElementById('startHero').src = SPRITES.jumpA.src;
+}
+
+/* ========================= THREE.JS ENVIRONMENT =========================== */
+class ThreeEnv {
+  constructor() {
+    this.renderer = null;
+    this.scene    = null;
+    this.camera   = null;
+    this.clock    = new THREE.Clock();
+
+    this.scrollX  = 0;  // cumulative world scroll
+    this.speed    = 8;  // current world speed
+
+    // Camera animation
+    this.camTarget = new THREE.Vector3(-1, 4.5, 12);
+    this.camLook   = new THREE.Vector3(6, 1, 0);
+    this.camSwayAmp = 0;
+
+    // Dust particles
+    this.dustParticles = null;
+    this.dustVels = [];
+    this.dustLife = [];
+    this.dustActive = [];
+    this.DUST_COUNT = 60;
+
+    this.init();
+  }
+
+  /* ----- Renderer & Scene ----- */
+  init() {
+    const canvas = document.getElementById('game');
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: window.devicePixelRatio < 1.5, alpha: false });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.1;
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x87ceeb);
+    this.scene.fog = new THREE.FogExp2(0xb8ddf0, 0.018);
+
+    const W = canvas.parentElement.clientWidth || 800;
+    const H = canvas.parentElement.clientHeight || 500;
+    this.camera = new THREE.PerspectiveCamera(58, W / H, 0.1, 200);
+    this.camera.position.set(-1, 4.5, 12);
+    this.camera.lookAt(6, 1, 0);
+
+    this.buildLighting();
+    this.buildSky();
+    this.buildStadiumGrandstand();
+    this.buildFloodlights();
+    this.buildGround();
+    this.buildRunningLights();
+    this.buildForegroundGrass();
+    this.buildFlowerPlanters();
+    this.buildCurbs();
+    this.buildFence();
+    this.buildBanners();
+    this.buildFinishGate();
+    this.buildRoyalArchitecture();
+    this.buildClouds();
+    this.buildHurdlePool();
+    this.buildHorse();
+    this.buildDust();
+    this.buildConfettiSystem();
+
+    window.addEventListener('resize', () => this.resize());
+    this.resize();
+  }
+
+  resize() {
+    const stage = document.getElementById('stage');
+    const W = stage.clientWidth, H = stage.clientHeight;
+    this.renderer.setSize(W, H);
+    this.camera.aspect = W / H;
+
+    // On narrow mobile screens (portrait), widen FOV so horse & hurdles stay 100% in view
+    if (this.camera.aspect < 1.1) {
+      this.camera.fov = Math.min(72, 60 / Math.max(0.5, this.camera.aspect));
+    } else {
+      this.camera.fov = 58;
+    }
+    this.camera.updateProjectionMatrix();
+  }
+
+  /* ----- Lighting ----- */
+  buildLighting() {
+    const hemi = new THREE.HemisphereLight(0x87ceeb, 0x3d6b30, 0.75);
+    this.scene.add(hemi);
+
+    const sun = new THREE.DirectionalLight(0xfff5d0, 1.5);
+    sun.position.set(20, 35, 8);
+    sun.castShadow = true;
+    sun.shadow.mapSize.width  = 1024;
+    sun.shadow.mapSize.height = 1024;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far  = 80;
+    sun.shadow.camera.left = -25; sun.shadow.camera.right = 25;
+    sun.shadow.camera.top  =  20; sun.shadow.camera.bottom = -20;
+    sun.shadow.bias = -0.001;
+    this.scene.add(sun);
+    this.sun = sun;
+
+    // Ambient fill
+    this.scene.add(new THREE.AmbientLight(0xffeedd, 0.3));
+  }
+
+  /* ----- Royal Twilight Sunset Sky ----- */
+  buildSky() {
+    const geo = new THREE.SphereGeometry(150, 16, 8);
+    const mat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      uniforms: {
+        topColor:    { value: new THREE.Color(0x1a0a2a) }, // Deep Royal Twilight Purple
+        bottomColor: { value: new THREE.Color(0xd47a28) }, // Warm Stadium Sunset Horizon
+        horizon:     { value: 0.28 },
+        exp:         { value: 0.65 },
+      },
+      vertexShader: `
+        varying vec3 vPos;
+        void main() { vPos = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+      `,
+      fragmentShader: `
+        uniform vec3 topColor, bottomColor; uniform float horizon, exp;
+        varying vec3 vPos;
+        void main() {
+          float h = clamp((normalize(vPos).y + horizon) / (1.0 + horizon), 0.0, 1.0);
+          gl_FragColor = vec4(mix(bottomColor, topColor, pow(h, exp)), 1.0);
+        }
+      `,
+    });
+    this.scene.add(new THREE.Mesh(geo, mat));
+  }
+
+  /* ----- Royal Championship Grandstands & 320 Instanced Spectators ----- */
+  buildStadiumGrandstand() {
+    const wallMat   = new THREE.MeshLambertMaterial({ color: 0x2b0d38 }); // Deep Royal Purple
+    const canopyMat = new THREE.MeshLambertMaterial({ color: 0x6b1426, side: THREE.DoubleSide }); // Imperial Burgundy Canopy
+    const trimMat   = new THREE.MeshLambertMaterial({ color: 0xd4af37 }); // Champagne Gold Trim
+    const railMat   = new THREE.MeshLambertMaterial({ color: 0xf5f5f5 });
+
+    // Main 3-Tiered Royal Grandstand structure behind track (z = -35)
+    const standGeo = new THREE.BoxGeometry(280, 20, 16);
+    const stand = new THREE.Mesh(standGeo, wallMat);
+    stand.position.set(0, 7, -35);
+    this.scene.add(stand);
+
+    // Tiered seating rows structure
+    for (let r = 0; r < 4; r++) {
+      const stepGeo = new THREE.BoxGeometry(280, 1.4, 2.8);
+      const step = new THREE.Mesh(stepGeo, new THREE.MeshLambertMaterial({ color: 0x1f0928 }));
+      step.position.set(0, 7.5 + r * 1.6, -34 + r * 2.4);
+      this.scene.add(step);
+
+      // Gold railing along balcony edges
+      const railBar = new THREE.Mesh(new THREE.BoxGeometry(280, 0.12, 0.12), trimMat);
+      railBar.position.set(0, 8.5 + r * 1.6, -32.6 + r * 2.4);
+      this.scene.add(railBar);
+    }
+
+    // Imperial Canopy Roof over grandstand
+    const roofGeo = new THREE.PlaneGeometry(280, 20);
+    const roof = new THREE.Mesh(roofGeo, canopyMat);
+    roof.rotation.x = Math.PI / 2.7;
+    roof.position.set(0, 18, -28);
+    this.scene.add(roof);
+
+    // Gold Trim Bar & Ornamental Crests along roof
+    const trimGeo = new THREE.BoxGeometry(280, 0.6, 0.6);
+    const trim = new THREE.Mesh(trimGeo, trimMat);
+    trim.position.set(0, 18.6, -21);
+    this.scene.add(trim);
+
+    // 320 Spectators active right from the start (0%)
+    const CROWD_COUNT = 320;
+    const bodyGeo = new THREE.CylinderGeometry(0.32, 0.42, 1.4, 6);
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    this.crowdMesh = new THREE.InstancedMesh(bodyGeo, bodyMat, CROWD_COUNT);
+
+    const colors = [0xd4af37, 0x8b1c24, 0x2b0d38, 0x1b3b6f, 0x3f6b3f, 0xe84a5f, 0xf1c40f, 0xffffff, 0x4a2e16];
+    this.crowdData = [];
+    const dummy = new THREE.Object3D();
+
+    for (let i = 0; i < CROWD_COUNT; i++) {
+      const row = i % 4;
+      const x = (i * 0.85) - 135 + (Math.random() - 0.5) * 1.4;
+      const y = 8.8 + row * 1.6;
+      const z = -33 + row * 2.4;
+
+      dummy.position.set(x, y, z);
+      dummy.updateMatrix();
+      this.crowdMesh.setMatrixAt(i, dummy.matrix);
+
+      const col = new THREE.Color(colors[i % colors.length]);
+      this.crowdMesh.setColorAt(i, col);
+
+      this.crowdData.push({
+        baseX: x, baseY: y, baseZ: z,
+        offset: i * 0.28,
+        state: Math.floor(Math.random() * 5),
+      });
+    }
+    this.crowdMesh.instanceMatrix.needsUpdate = true;
+    if (this.crowdMesh.instanceColor) this.crowdMesh.instanceColor.needsUpdate = true;
+    this.scene.add(this.crowdMesh);
+  }
+
+  /* ----- 80 Champagne-Gold Glittering Running Lights ----- */
+  buildRunningLights() {
+    this.LIGHT_COUNT = 80;
+    this.runningLights = [];
+    const glowGeo = new THREE.SphereGeometry(0.22, 8, 8);
+
+    for (let i = 0; i < this.LIGHT_COUNT; i++) {
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: (i % 3 === 0) ? 0xfffae6 : 0xffd166,
+        transparent: true,
+        opacity: 0.95
+      });
+      const p = new THREE.Mesh(glowGeo, glowMat);
+      const side = (i % 2 === 0) ? -3.4 : 3.4; // left and right track edges
+      const x = (i * 3.6) - 140;
+      p.position.set(x, 0.16, side);
+      this.scene.add(p);
+      this.runningLights.push({
+        mesh: p,
+        baseX: x,
+        side: side,
+        speed: 1.5 + Math.random() * 0.5
+      });
+    }
+  }
+
+  /* ----- 3D Floodlight Towers & Animated Sweeping Spotlights ----- */
+  buildFloodlights() {
+    this.spotlights = [];
+    const towerMat = new THREE.MeshLambertMaterial({ color: 0x4a5568 });
+    const lampMat  = new THREE.MeshBasicMaterial({ color: 0xfffae6 });
+    const coneMat  = new THREE.MeshBasicMaterial({ color: 0xfffae6, opacity: 0.14, transparent: true, depthWrite: false });
+
+    const X_POS = [-90, -30, 30, 90];
+    for (let i = 0; i < X_POS.length; i++) {
+      const x = X_POS[i];
+      const z = -22;
+
+      // Vertical lattice tower
+      const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.6, 26, 6), towerMat);
+      tower.position.set(x, 13, z);
+      this.scene.add(tower);
+
+      // Light head fixture grid
+      const head = new THREE.Mesh(new THREE.BoxGeometry(4, 2.2, 1), towerMat);
+      head.position.set(x, 26, z + 0.5);
+      this.scene.add(head);
+
+      // Bright lamp bulbs
+      const lamps = new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.8, 0.2), lampMat);
+      lamps.position.set(x, 26, z + 1.1);
+      this.scene.add(lamps);
+
+      // Sweeping volumetric light cone beam
+      const coneGeo = new THREE.ConeGeometry(8, 30, 12, 1, true);
+      const cone = new THREE.Mesh(coneGeo, coneMat);
+      cone.position.set(x, 13, z + 8);
+      cone.rotation.x = Math.PI / 3;
+      this.scene.add(cone);
+
+      this.spotlights.push({ mesh: cone, baseX: x, offset: i * 1.5 });
+    }
+  }
+
+  /* ----- Ground & Track ----- */
+  buildGround() {
+    // Vast grass plane
+    const grassGeo = new THREE.PlaneGeometry(300, 80);
+    const grassMat = new THREE.MeshLambertMaterial({ color: 0x3d6b38 });
+    const grass = new THREE.Mesh(grassGeo, grassMat);
+    grass.rotation.x = -Math.PI / 2;
+    grass.position.set(0, -0.01, -5);
+    grass.receiveShadow = true;
+    this.scene.add(grass);
+
+    // Dirt racing lane with procedural dirt canvas texture & bump detail
+    const trackGeo = new THREE.PlaneGeometry(300, 7);
+    this.dirtTex = createDirtTexture();
+    this.trackMat = new THREE.MeshLambertMaterial({ map: this.dirtTex, color: 0xa87c42 });
+    const track = new THREE.Mesh(trackGeo, this.trackMat);
+    track.rotation.x = -Math.PI / 2;
+    track.position.set(0, 0, 0);
+    track.receiveShadow = true;
+    this.scene.add(track);
+
+    // Track edge lines (white strips)
+    const edgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    [-3.3, 3.3].forEach(z => {
+      const eGeo = new THREE.PlaneGeometry(300, 0.18);
+      const edge = new THREE.Mesh(eGeo, edgeMat);
+      edge.rotation.x = -Math.PI / 2;
+      edge.position.set(0, 0.005, z);
+      this.scene.add(edge);
+    });
+
+    // Scrolling dashes
+    this.dashPool = [];
+    const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0.5, transparent: true });
+    for (let i = 0; i < 25; i++) {
+      const d = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.12), dashMat);
+      d.rotation.x = -Math.PI / 2;
+      d.position.set(i * 10 - 100, 0.006, 0.3);
+      this.scene.add(d);
+      this.dashPool.push(d);
+    }
+    this.dashSpacing = 10;
+  }
+
+  /* ----- Layer 6: Foreground Grass Tufts (Fast Parallax) ----- */
+  buildForegroundGrass() {
+    this.fgGrassPool = [];
+    const grassMat = new THREE.MeshLambertMaterial({ color: 0x467832, side: THREE.DoubleSide });
+    const tuftGeo  = new THREE.ConeGeometry(0.35, 0.7, 4);
+
+    const COUNT = 32;
+    for (let i = 0; i < COUNT; i++) {
+      const g = new THREE.Mesh(tuftGeo, grassMat);
+      const x = i * 4 - 40;
+      const z = 4.8 + Math.random() * 0.8;
+      g.position.set(x, 0.35, z);
+      g.rotation.z = (Math.random() - 0.5) * 0.3;
+      this.scene.add(g);
+      this.fgGrassPool.push({ mesh: g, baseX: x });
+    }
+  }
+
+  /* ----- 3D Red & White Runway Curbs ----- */
+  buildCurbs() {
+    this.curbPool = [];
+    const redMat   = new THREE.MeshLambertMaterial({ color: 0xc82424 });
+    const whiteMat = new THREE.MeshLambertMaterial({ color: 0xf4f4f4 });
+    const curbGeo  = new THREE.BoxGeometry(1.8, 0.12, 0.22);
+
+    const COUNT = 60;
+    for (let i = 0; i < COUNT; i++) {
+      const mat = (i % 2 === 0) ? redMat : whiteMat;
+      [-3.4, 3.4].forEach(z => {
+        const curb = new THREE.Mesh(curbGeo, mat);
+        curb.position.set(i * 1.8 - 50, 0.04, z);
+        curb.receiveShadow = true;
+        this.scene.add(curb);
+        this.curbPool.push({ mesh: curb, baseX: i * 1.8 - 50, z });
+      });
+    }
+    this.curbTotalW = COUNT * 1.8;
+  }
+
+  /* ----- Configurable Tournament Banners ----- */
+  buildBanners() {
+    this.bannerPool = [];
+    const colors = [0x7a2331, 0xc9a24b, 0x1b3b6f, 0x3f6b3f];
+    const bannerGeo = new THREE.PlaneGeometry(4.2, 0.65);
+
+    const COUNT = 16;
+    for (let i = 0; i < COUNT; i++) {
+      const c = colors[i % colors.length];
+      const txt = DERBY_CONFIG.banners[i % DERBY_CONFIG.banners.length];
+
+      // Procedural canvas text for configurable banner title & year
+      const canvas = document.createElement('canvas');
+      canvas.width = 256; canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = (i % 2 === 0) ? '#7a2331' : '#1b3b6f';
+      ctx.fillRect(0,0,256,64);
+      ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 6; ctx.strokeRect(4,4,248,56);
+      ctx.fillStyle = '#ffffff'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(txt, 128, 32);
+
+      const tex = new THREE.CanvasTexture(canvas);
+      const mat = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide });
+      const b = new THREE.Mesh(bannerGeo, mat);
+      const x = i * 12 - 80;
+      b.position.set(x, 0.50, -4.55);
+      this.scene.add(b);
+      this.bannerPool.push({ mesh: b, baseX: x });
+    }
+  }
+
+  /* ----- Royal Championship Finish Arch (From Reference Image) ----- */
+  buildFinishGate() {
+    this.finishGateGroup = new THREE.Group();
+    const goldMat  = new THREE.MeshLambertMaterial({ color: 0xd4af37 }); // Gold Arch Pillars
+    const velvetMat = new THREE.MeshLambertMaterial({ color: 0x2b0d38 }); // Royal Purple Banner
+    const redMat    = new THREE.MeshLambertMaterial({ color: 0x8b1c24 }); // Imperial Red Frame
+
+    // Left and right ornate pillars with Gold Finial tops
+    [-4.5, 4.5].forEach(z => {
+      const pGroup = new THREE.Group();
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.55, 10, 12), goldMat);
+      pillar.position.set(0, 5, 0);
+      pGroup.add(pillar);
+
+      // Gold base pedestal
+      const ped = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), redMat);
+      ped.position.set(0, 0.6, 0);
+      pGroup.add(ped);
+
+      // Gold finial ball on pillar top
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 12), goldMat);
+      ball.position.set(0, 10.3, 0);
+      pGroup.add(ball);
+
+      pGroup.position.set(0, 0, z);
+      this.finishGateGroup.add(pGroup);
+    });
+
+    // Main Royal Header Arch Frame
+    const archHeader = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.6, 9.8), velvetMat);
+    archHeader.position.set(0, 9.5, 0);
+    this.finishGateGroup.add(archHeader);
+
+    // Gold Crown Motif on top center of Finish Arch
+    const crownBase = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.8, 0.8, 8), goldMat);
+    crownBase.position.set(0, 11.0, 0);
+    this.finishGateGroup.add(crownBase);
+
+    // FINISH text banner with Royal Championship branding
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#2b0d38'; ctx.fillRect(0,0,512,128);
+    ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 10; ctx.strokeRect(8,8,496,112);
+    ctx.fillStyle = '#d4af37'; ctx.font = 'bold 22px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('ROYAL CHAMPIONSHIP', 256, 40);
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 44px sans-serif';
+    ctx.fillText('FINISH', 256, 95);
+    const tex = new THREE.CanvasTexture(canvas);
+
+    const fBanner = new THREE.Mesh(new THREE.PlaneGeometry(8.5, 2.0), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
+    fBanner.position.set(0.42, 9.5, 0);
+    this.finishGateGroup.add(fBanner);
+
+    // Checkered Racing Flags attached to Arch sides
+    [-4.8, 4.8].forEach(z => {
+      const cCanvas = document.createElement('canvas');
+      cCanvas.width = 64; cCanvas.height = 64;
+      const cCtx = cCanvas.getContext('2d');
+      for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 4; c++) {
+          cCtx.fillStyle = (r + c) % 2 === 0 ? '#ffffff' : '#000000';
+          cCtx.fillRect(c * 16, r * 16, 16, 16);
+        }
+      }
+      const cTex = new THREE.CanvasTexture(cCanvas);
+      const flagMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.2), new THREE.MeshBasicMaterial({ map: cTex, side: THREE.DoubleSide }));
+      flagMesh.position.set(0.45, 9.2, z);
+      this.finishGateGroup.add(flagMesh);
+    });
+
+    // Initial position far ahead (updated dynamically)
+    this.finishGateGroup.position.set(300, 0, 0);
+    this.scene.add(this.finishGateGroup);
+  }
+
+  /* ----- Track-side Flower Planters (From Reference Image) ----- */
+  buildFlowerPlanters() {
+    this.planterPool = [];
+    const boxMat = new THREE.MeshLambertMaterial({ color: 0x4a2e16 }); // Dark wood planter
+    const goldMat = new THREE.MeshLambertMaterial({ color: 0xd4af37 });
+    const leafMat = new THREE.MeshLambertMaterial({ color: 0x1b4a1b });
+    const flowerMat = new THREE.MeshBasicMaterial({ color: 0xd92534 }); // Red Roses
+
+    const COUNT = 16;
+    for (let i = 0; i < COUNT; i++) {
+      const g = new THREE.Group();
+
+      // Wooden box planter
+      const box = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.45, 0.6), boxMat);
+      box.position.set(0, 0.22, 0);
+      g.add(box);
+
+      // Gold crest trim on planter box
+      const trim = new THREE.Mesh(new THREE.BoxGeometry(2.45, 0.08, 0.65), goldMat);
+      trim.position.set(0, 0.42, 0);
+      g.add(trim);
+
+      // Green foliage inside planter box
+      const leaves = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.25, 0.5), leafMat);
+      leaves.position.set(0, 0.55, 0);
+      g.add(leaves);
+
+      // Red rose flowers popping out
+      for (let f = 0; f < 6; f++) {
+        const rose = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), flowerMat);
+        rose.position.set((f - 2.5) * 0.38, 0.72 + (f % 2) * 0.05, (Math.random() - 0.5) * 0.2);
+        g.add(rose);
+      }
+
+      const x = i * 12 - 80;
+      g.position.set(x, 0, 4.0); // Placed along track-side boundary
+      this.scene.add(g);
+      this.planterPool.push({ mesh: g, baseX: x });
+    }
+  }
+
+  /* ----- Fence ----- */
+  buildFence() {
+    const postMat = new THREE.MeshLambertMaterial({ color: 0xf5f5f5 });
+    const railMat = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
+
+    this.fenceGroups = [];
+    const COUNT = 28;
+    const SPACING = 4;
+
+    for (let i = 0; i < COUNT; i++) {
+      const g = new THREE.Group();
+
+      // Post
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.3, 0.14), postMat);
+      post.position.set(0, 0.65, 0);
+      post.castShadow = true;
+      g.add(post);
+
+      // Rails (two horizontal)
+      [0.85, 0.45].forEach(h => {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(SPACING + 0.1, 0.1, 0.08), railMat);
+        rail.position.set(SPACING / 2, h, 0);
+        g.add(rail);
+      });
+
+      // Place two lanes: far (Z=-4.6) and near (Z=4.6)
+      [-4.6, 4.6].forEach(z => {
+        const clone = g.clone();
+        clone.position.set(i * SPACING - COUNT * SPACING / 2, 0, z);
+        this.scene.add(clone);
+        this.fenceGroups.push({ mesh: clone, z, baseX: i * SPACING - COUNT * SPACING / 2 });
+      });
+    }
+    this.fenceSpacing = SPACING;
+    this.fenceTotalWidth = COUNT * SPACING;
+  }
+
+  /* ----- Royal Stadium Architecture (NO TREES, NO FOREST) ----- */
+  buildRoyalArchitecture() {
+    this.treeMeshes = [];
+    const pillarMat = new THREE.MeshLambertMaterial({ color: 0xd4af37 }); // Gold Decorative Pillars
+    const wallMat   = new THREE.MeshLambertMaterial({ color: 0x2b0d38 }); // Royal Purple Walls
+
+    // Distant royal stadium arcade pillars behind grandstand
+    for (let x = -130; x < 130; x += 12) {
+      const g = new THREE.Group();
+      const p1 = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 14, 8), pillarMat);
+      p1.position.set(0, 7, 0);
+      g.add(p1);
+
+      const pCap = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 8), pillarMat);
+      pCap.position.set(0, 14.3, 0);
+      g.add(pCap);
+
+      g.position.set(x, 0, -38);
+      this.scene.add(g);
+      this.treeMeshes.push({ group: g, baseX: x });
+    }
+  }
+
+  /* ----- Clouds ----- */
+  buildClouds() {
+    this.clouds = [];
+    const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0.75, transparent: true });
+
+    for (let i = 0; i < 10; i++) {
+      const g = new THREE.Group();
+      const parts = 2 + Math.floor(Math.random() * 3);
+      for (let p = 0; p < parts; p++) {
+        const r = 1.5 + Math.random() * 2;
+        const c = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), cloudMat);
+        c.position.set((p - parts / 2) * 2.5, (Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 1.5);
+        g.add(c);
+      }
+      g.position.set(-80 + i * 18 + Math.random() * 8, 10 + Math.random() * 5, -25 - Math.random() * 20);
+      this.scene.add(g);
+      this.clouds.push({ group: g, speed: 0.3 + Math.random() * 0.4 });
+    }
+  }
+
+  /* ----- Hurdle Pool (5 Visual Styles, Same Collision) ----- */
+  buildHurdlePool() {
+    this.hurdleStyleMats = [
+      // Style 0: Classic Championship (Red & White)
+      { post: new THREE.MeshLambertMaterial({ color: 0xf8f8f8 }), rail: new THREE.MeshLambertMaterial({ color: 0xcc2200 }), base: new THREE.MeshLambertMaterial({ color: 0xd4a820 }), flag: new THREE.MeshLambertMaterial({ color: 0xcc2200 }) },
+      // Style 1: Rustic Timber (Dark Oak & Iron)
+      { post: new THREE.MeshLambertMaterial({ color: 0x4a3219 }), rail: new THREE.MeshLambertMaterial({ color: 0xeeeeee }), base: new THREE.MeshLambertMaterial({ color: 0x2a2a2a }), flag: new THREE.MeshLambertMaterial({ color: 0xc9a24b }) },
+      // Style 2: Turf Emerald (Green & White)
+      { post: new THREE.MeshLambertMaterial({ color: 0xf8f8f8 }), rail: new THREE.MeshLambertMaterial({ color: 0x1f5e2b }), base: new THREE.MeshLambertMaterial({ color: 0x2d5a1b }), flag: new THREE.MeshLambertMaterial({ color: 0x1f5e2b }) },
+      // Style 3: Floral Derby (Bright White & Flowers)
+      { post: new THREE.MeshLambertMaterial({ color: 0xffffff }), rail: new THREE.MeshLambertMaterial({ color: 0xe63946 }), base: new THREE.MeshLambertMaterial({ color: 0x457b9d }), flag: new THREE.MeshLambertMaterial({ color: 0xe63946 }) },
+      // Style 4: Grand Gold Cup (Imperial Navy & Gold)
+      { post: new THREE.MeshLambertMaterial({ color: 0x1b2b4c }), rail: new THREE.MeshLambertMaterial({ color: 0xd4a820 }), base: new THREE.MeshLambertMaterial({ color: 0x1b2b4c }), flag: new THREE.MeshLambertMaterial({ color: 0xd4a820 }) },
+    ];
+
+    const postGeo  = new THREE.BoxGeometry(0.28, 1.8, 0.28);
+    const railGeo  = new THREE.BoxGeometry(0.22, 0.16, 6.5);
+    const baseGeo  = new THREE.BoxGeometry(0.5, 0.18, 0.8);
+    const flagGeo  = new THREE.BoxGeometry(0.5, 0.35, 0.04);
+
+    this.hurdlePool = [];
+    const POOL_SIZE = 8;
+
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const g = new THREE.Group();
+
+      const lPost = new THREE.Mesh(postGeo, this.hurdleStyleMats[0].post);
+      lPost.position.set(0, 0.9, -3.25);
+      lPost.castShadow = true;
+      g.add(lPost);
+
+      const rPost = new THREE.Mesh(postGeo, this.hurdleStyleMats[0].post);
+      rPost.position.set(0, 0.9, 3.25);
+      rPost.castShadow = true;
+      g.add(rPost);
+
+      const rail = new THREE.Mesh(railGeo, this.hurdleStyleMats[0].rail);
+      rail.castShadow = true;
+      g.add(rail);
+
+      const rail2 = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 6.5), this.hurdleStyleMats[0].post);
+      g.add(rail2);
+
+      const bases = [];
+      [-3.25, 3.25].forEach(z => {
+        const base = new THREE.Mesh(baseGeo, this.hurdleStyleMats[0].base);
+        base.position.set(0, 0.09, z);
+        g.add(base);
+        bases.push(base);
+      });
+
+      const flags = [];
+      [-3.25, 3.25].forEach(z => {
+        const flag = new THREE.Mesh(flagGeo, this.hurdleStyleMats[0].flag);
+        flag.position.set(0, 1.85, z + (z > 0 ? -0.18 : 0.18));
+        g.add(flag);
+        flags.push(flag);
+      });
+
+      g.visible = false;
+      g.position.set(50, 0, 0);
+      this.scene.add(g);
+
+      this.hurdlePool.push({
+        group: g,
+        active: false,
+        lPost, rPost, rail, rail2, bases, flags,
+        gameHurdle: null,
+      });
+    }
+  }
+
+  /* ----- Horse Sprite Billboard ----- */
+  buildHorse() {
+    const H = GC.player.horseHeight;
+    const W = H * GC.player.horseAspect;
+
+    const geo = new THREE.PlaneGeometry(W, H);
+    // Default to idleA texture, will be switched
+    const texKey = TEXTURES.idleA ? 'idleA' : Object.keys(TEXTURES)[0];
+    const mat = new THREE.MeshBasicMaterial({
+      map: TEXTURES[texKey] || null,
+      transparent: true,
+      alphaTest: 0.05,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+
+    this.horseMesh = new THREE.Mesh(geo, mat);
+    // Fixed X position: horse at x=GC.world.horseX, z slightly toward camera
+    this.horseMesh.position.set(GC.world.horseX, H / 2, 0.8);
+    this.horseMesh.renderOrder = 10;
+    this.scene.add(this.horseMesh);
+
+    // Pre-build material set
+    this.horseMats = {};
+    for (const k of Object.keys(TEXTURES)) {
+      this.horseMats[k] = new THREE.MeshBasicMaterial({
+        map: TEXTURES[k],
+        transparent: true,
+        alphaTest: 0.05,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+    }
+
+    // Shadow ellipse
+    const shadowGeo = new THREE.CircleGeometry(1.2, 14);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      opacity: 0.25,
+      transparent: true,
+      depthWrite: false,
+    });
+    this.horseShadow = new THREE.Mesh(shadowGeo, shadowMat);
+    this.horseShadow.rotation.x = -Math.PI / 2;
+    this.horseShadow.position.set(GC.world.horseX, 0.01, 0.8);
+    this.horseShadow.renderOrder = 5;
+    this.scene.add(this.horseShadow);
+  }
+
+  /* ----- Procedural Billowy Dust Puff Texture ----- */
+  createDustTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(32,32,0, 32,32,32);
+    grad.addColorStop(0, 'rgba(255, 240, 200, 0.95)');
+    grad.addColorStop(0.45, 'rgba(215, 165, 100, 0.65)');
+    grad.addColorStop(0.8, 'rgba(170, 120, 60, 0.25)');
+    grad.addColorStop(1, 'rgba(170, 120, 60, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,64,64);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  /* ----- Dust Particles (Big Billowy Cloud Puffs) ----- */
+  buildDust() {
+    this.DUST_COUNT = 150;
+    this.dustVels = [];
+    this.dustLife = [];
+    this.dustActive = [];
+
+    const N = this.DUST_COUNT;
+    const posArr = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) posArr[i * 3 + 1] = -100;
+
+    const geo = new THREE.BufferGeometry();
+    this.dustPosAttr = new THREE.BufferAttribute(posArr, 3);
+    geo.setAttribute('position', this.dustPosAttr);
+
+    const dustTex = this.createDustTexture();
+    const mat = new THREE.PointsMaterial({
+      size: 0.95,
+      map: dustTex,
+      transparent: true,
+      opacity: 0.85,
+      sizeAttenuation: true,
+      depthWrite: false,
+    });
+    this.dustParticles = new THREE.Points(geo, mat);
+    this.dustParticles.renderOrder = 12;
+    this.scene.add(this.dustParticles);
+
+    for (let i = 0; i < N; i++) {
+      this.dustVels.push({ x: 0, y: 0, z: 0 });
+      this.dustLife.push(0);
+      this.dustActive.push(false);
+    }
+  }
+
+  emitDust(x, y, z, count = 8, intensity = 1.0) {
+    if (!this.dustActive || !this.dustPosAttr) return;
+    let emitted = 0;
+    for (let i = 0; i < (this.DUST_COUNT || 150) && emitted < count; i++) {
+      if (!this.dustActive[i]) {
+        this.dustActive[i] = true;
+        const pa = this.dustPosAttr.array;
+        pa[i*3]   = x + (Math.random()-0.5)*0.6;
+        pa[i*3+1] = y + (Math.random()-0.5)*0.2;
+        pa[i*3+2] = z + (Math.random()-0.5)*0.5;
+        this.dustVels[i].x = (-1.5 + (Math.random()-0.5)*2.5) * intensity;
+        this.dustVels[i].y = (0.8 + Math.random()*2.0) * intensity;
+        this.dustVels[i].z = (Math.random()-0.5)*0.8;
+        this.dustLife[i]   = 0.5 + Math.random()*0.4;
+        emitted++;
+      }
+    }
+    this.dustPosAttr.needsUpdate = true;
+  }
+
+  /* ----- 3D Confetti Burst System ----- */
+  buildConfettiSystem() {
+    this.CONFETTI_COUNT = 60;
+    this.confettiPool = [];
+    const colors = [0xd4af37, 0xe84a5f, 0x3498db, 0x2ecc71, 0xffffff, 0xf1c40f];
+    const geo = new THREE.PlaneGeometry(0.25, 0.25);
+
+    for (let i = 0; i < this.CONFETTI_COUNT; i++) {
+      const col = colors[i % colors.length];
+      const mat = new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide });
+      const p = new THREE.Mesh(geo, mat);
+      p.position.set(0, -100, 0);
+      this.scene.add(p);
+      this.confettiPool.push({
+        mesh: p,
+        vel: new THREE.Vector3(),
+        rotVel: new THREE.Vector3(),
+        active: false,
+        life: 0
+      });
+    }
+  }
+
+  triggerClearEffect() {
+    this.emitDust(GC.world.horseX + 1.2, 1.2, 0.8, 12, 1.4);
+
+    // Confetti celebration burst!
+    let emitted = 0;
+    const t = performance.now() * 0.001;
+    for (const c of this.confettiPool) {
+      if (!c.active && emitted < 24) {
+        c.active = true;
+        c.life = 1.4 + Math.random() * 0.6;
+        c.mesh.position.set(GC.world.horseX + 1.5 + (Math.random()-0.5)*1.2, 2.2 + Math.random()*1.0, 0.8 + (Math.random()-0.5)*1.5);
+        c.vel.set((Math.random()-0.3)*4.5, 3.5 + Math.random()*3.5, (Math.random()-0.5)*3.0);
+        c.rotVel.set(Math.random()*10, Math.random()*10, Math.random()*10);
+        emitted++;
+      }
+    }
+  }
+
+  updateConfetti(dt) {
+    if (!this.confettiPool) return;
+    for (const c of this.confettiPool) {
+      if (c.active) {
+        c.life -= dt;
+        if (c.life <= 0) {
+          c.active = false;
+          c.mesh.position.set(0, -100, 0);
+        } else {
+          c.mesh.position.addScaledVector(c.vel, dt);
+          c.vel.y -= 7.0 * dt; // gravity
+          c.mesh.rotation.x += c.rotVel.x * dt;
+          c.mesh.rotation.y += c.rotVel.y * dt;
+          c.mesh.rotation.z += c.rotVel.z * dt;
+        }
+      }
+    }
+  }
+
+  updateDust(dt) {
+    const pa = this.dustPosAttr.array;
+    let any = false;
+    for (let i = 0; i < this.DUST_COUNT; i++) {
+      if (this.dustActive[i]) {
+        this.dustLife[i] -= dt;
+        if (this.dustLife[i] <= 0) {
+          this.dustActive[i] = false;
+          pa[i*3+1] = -100;
+        } else {
+          pa[i*3]   += this.dustVels[i].x * dt;
+          pa[i*3+1] += this.dustVels[i].y * dt;
+          pa[i*3+2] += this.dustVels[i].z * dt;
+          this.dustVels[i].y -= 4 * dt;
+          pa[i*3+1] = Math.max(0.1, pa[i*3+1]);
+          any = true;
+        }
+      }
+    }
+    if (any) this.dustPosAttr.needsUpdate = true;
+  }
+
+  /* ----- External triggers ----- */
+  triggerLandingDust() {
+    this.emitDust(GC.world.horseX - 0.3, 0.2, 0.8, 28, 2.2);
+  }
+  triggerJumpDust() {
+    this.emitDust(GC.world.horseX - 0.6, 0.2, 0.8, 18, 1.6);
+  }
+  triggerClearEffect() {
+    // Gold burst at hurdle position
+    this.emitDust(GC.world.horseX + 1, 1.2, 0, 12, 1.2);
+  }
+
+  /* ----- Sync hurdles from game state ----- */
+  syncHurdles(gameHurdles) {
+    // Deactivate all pool slots
+    for (const slot of this.hurdlePool) slot.active = false;
+
+    for (const gh of gameHurdles) {
+      // Find or assign a pool slot
+      let slot = this.hurdlePool.find(s => s.gameHurdle === gh);
+      if (!slot) slot = this.hurdlePool.find(s => !s.active);
+      if (!slot) continue;
+
+      slot.active = true;
+      slot.gameHurdle = gh;
+      slot.group.visible = true;
+      slot.group.position.x = gh.x;
+      slot.group.position.y = 0;
+
+      // Apply hurdle style materials (5 visual variations)
+      const styleIdx = (gh.style !== undefined) ? gh.style : 0;
+      const m = this.hurdleStyleMats[styleIdx] || this.hurdleStyleMats[0];
+      slot.lPost.material = m.post;
+      slot.rPost.material = m.post;
+      slot.rail.material  = m.rail;
+      slot.rail2.material = m.post;
+      if (slot.bases) slot.bases.forEach(b => b.material = m.base);
+      if (slot.flags) slot.flags.forEach(f => f.material = m.flag);
+
+      // Position rail at hurdle height
+      slot.rail.position.set(0, gh.height, 0);
+      slot.rail2.position.set(0, gh.height - 0.25, 0);
+      
+      // Subtle approach glow: hurdle turns brighter when < 5 units away
+      const closeness = Math.max(0, 1 - Math.abs(gh.x) / 5);
+      const r = slot.rail;
+      if (closeness > 0) {
+        r.material.emissive = r.material.emissive || new THREE.Color();
+        r.material.emissiveIntensity = closeness * 0.3;
+      }
+    }
+
+    // Hide inactive slots
+    for (const slot of this.hurdlePool) {
+      if (!slot.active) {
+        slot.group.visible = false;
+        slot.gameHurdle = null;
+      }
+    }
+  }
+
+  /* ----- Update horse visual ----- */
+  syncHorse(jumpY, animState, animFrame, gameState) {
+    const H = GC.player.horseHeight;
+    // Horse center Y = ground + half height + jumpY
+    this.horseMesh.position.y = H / 2 + jumpY;
+
+    // Dynamic Shadow: shrinks & lightens when airborne, expands/darkens on land
+    const shadowScale = Math.max(0.35, 1.2 - jumpY * 0.35);
+    const shadowOpacity = Math.max(0.08, 0.28 - jumpY * 0.12);
+    this.horseShadow.scale.setScalar(shadowScale);
+    this.horseShadow.material.opacity = shadowOpacity;
+
+    // Face camera (billboard around Y axis)
+    this.horseMesh.lookAt(this.camera.position);
+    this.horseMesh.rotation.y = 0; // sprite faces right (direction of travel)
+    this.horseMesh.rotation.x = 0;
+    this.horseMesh.rotation.z = 0;
+
+    // Pick texture
+    let texKey = 'idleA';
+    if (gameState === STATE.GAME_OVER) {
+      texKey = 'jumpC';
+    } else if (animState === ANIM.JUMP) {
+      const vy = this._lastVY || 0;
+      if (vy > 2) texKey = 'jumpA';
+      else if (vy < -2) texKey = 'jumpC';
+      else texKey = 'jumpB';
+    } else if (animState === ANIM.RUN) {
+      texKey = ['runA','runB','runC'][animFrame % 3];
+    } else {
+      texKey = ['idleA','idleB'][animFrame % 2];
+    }
+
+    const mat = this.horseMats[texKey];
+    if (mat && this.horseMesh.material !== mat) {
+      this.horseMesh.material = mat;
+    }
+  }
+
+  /* ----- Scroll world elements ----- */
+  scrollWorld(delta, speed) {
+    this.scrollX += delta;
+    const s = speed;
+
+    // Fence: fast scroll (parallax 0.85x)
+    if (this.fenceGroups) {
+      const fenceParallax = 0.85;
+      const totalFW = this.fenceTotalWidth || 112;
+      for (const f of this.fenceGroups) {
+        if (f && f.mesh && f.mesh.position) {
+          f.mesh.position.x = f.baseX - (this.scrollX * fenceParallax) % totalFW;
+          const px = f.mesh.position.x;
+          if (px < -totalFW / 2 - 20) { f.baseX += totalFW; f.mesh.position.x += totalFW; }
+          if (px > totalFW / 2 + 20)  { f.baseX -= totalFW; f.mesh.position.x -= totalFW; }
+        }
+      }
+    }
+
+    // Trees: slow scroll (parallax 0.12x)
+    if (this.treeMeshes) {
+      for (const t of this.treeMeshes) {
+        if (t && t.group && t.group.position) {
+          t.group.position.x = t.baseX - (this.scrollX * 0.12) % 260;
+          if (t.group.position.x < -130) t.baseX += 260;
+          if (t.group.position.x > 130)  t.baseX -= 260;
+        }
+      }
+    }
+
+    // Banners: scroll
+    if (this.bannerPool) {
+      for (const b of this.bannerPool) {
+        if (b && b.mesh && b.mesh.position) {
+          b.mesh.position.x = b.baseX - (this.scrollX * 0.85) % 192;
+          if (b.mesh.position.x < -100) b.baseX += 192;
+          if (b.mesh.position.x > 92)   b.baseX -= 192;
+        }
+      }
+    }
+
+    // Foreground grass: fast scroll
+    if (this.fgGrassPool) {
+      for (const g of this.fgGrassPool) {
+        if (g && g.mesh && g.mesh.position) {
+          g.mesh.position.x = g.baseX - (this.scrollX * 1.1) % 128;
+          if (g.mesh.position.x < -64) g.baseX += 128;
+          if (g.mesh.position.x > 64)  g.baseX -= 128;
+        }
+      }
+    }
+
+    // Trackside flower planters (1.0x scroll)
+    if (this.planterPool) {
+      const planterTotalW = 16 * 12;
+      for (const p of this.planterPool) {
+        if (p && p.mesh && p.mesh.position) {
+          p.mesh.position.x = p.baseX - (this.scrollX) % planterTotalW;
+          if (p.mesh.position.x < -80) p.baseX += planterTotalW;
+          if (p.mesh.position.x > 112) p.baseX -= planterTotalW;
+        }
+      }
+    }
+
+    // Dashes: fast scroll
+    if (this.dashPool) {
+      for (const d of this.dashPool) {
+        if (d && d.position) {
+          d.position.x -= s * (1 / 60);
+          if (d.position.x < -15) d.position.x += this.dashSpacing * this.dashPool.length;
+          if (d.position.x > 50)  d.position.x -= this.dashSpacing * this.dashPool.length;
+        }
+      }
+    }
+
+    // Clouds: very slow
+    if (this.clouds) {
+      for (const c of this.clouds) {
+        if (c && c.group && c.group.position) {
+          c.group.position.x -= c.speed * (1 / 60);
+          if (c.group.position.x < -100) c.group.position.x += 200;
+        }
+      }
+    }
+  }
+
+  /* ----- Camera update (Mobile & Desktop Responsive) ----- */
+  updateCamera(dt, jumpY, speed, hardMode) {
+    const aspect = this.camera.aspect || 1.0;
+    const isMobilePortrait = aspect < 1.1;
+
+    // Responsive camera position targets:
+    // Mobile: camera at x = -2.5 looking at x = 1.5, keeping horse at x = 0 at ~28% across screen (100% visible with margin!)
+    const targetZ = (isMobilePortrait ? 13.5 : 12.0) + (hardMode ? 0 : 0.5);
+    const targetCamX = isMobilePortrait ? -2.5 : -1.0;
+
+    // Sway amplitude based on speed
+    const swayTarget = Math.min(0.12, speed * 0.005);
+    this.camSwayAmp += (swayTarget - this.camSwayAmp) * dt * 3;
+
+    const t = performance.now() * 0.001;
+    const sway = Math.sin(t * 2.8) * this.camSwayAmp;
+    const bounce = Math.sin(t * 5.6) * this.camSwayAmp * 0.3;
+    const jumpFollow = jumpY * 0.25;
+
+    const targetY = (isMobilePortrait ? 4.2 : 4.5) + jumpFollow + bounce;
+
+    this.camera.position.x += (targetCamX - this.camera.position.x) * dt * 4;
+    this.camera.position.y += (targetY - this.camera.position.y) * dt * 4;
+    this.camera.position.z += (targetZ - this.camera.position.z) * dt * 4;
+
+    // Look ahead of horse: look at x = 1.5 on mobile so horse (x=0) is prominently visible
+    const lookX = (isMobilePortrait ? 1.5 : 5.0) + sway;
+    const lookY = 1 + jumpY * 0.12;
+    this.camera.lookAt(lookX, lookY, 0);
+  }
+
+    // Scroll world elements
+  scrollWorld(delta, speed) {
+    this.scrollX += delta;
+    const s = speed;
+
+    // Mountains: ultra slow parallax (0.02x)
+    if (this.mountains) {
+      for (const m of this.mountains) {
+        const px = m.baseX - (this.scrollX * m.speed) % 260;
+        m.rock.position.x = px;
+        m.snow.position.x = px;
+      }
+    }
+
+    // Fence: fast scroll (parallax 0.85x)
+    const fenceParallax = 0.85;
+    const totalFW = this.fenceTotalWidth;
+    for (const f of this.fenceGroups) {
+      f.mesh.position.x = f.baseX - (this.scrollX * fenceParallax) % totalFW;
+      const px = f.mesh.position.x;
+      if (px < -totalFW / 2 - 20) { f.baseX += totalFW; f.mesh.position.x += totalFW; }
+      if (px > totalFW / 2 + 20)  { f.baseX -= totalFW; f.mesh.position.x -= totalFW; }
+    }
+
+    // Banners: scroll with fence (0.85x)
+    if (this.bannerPool) {
+      const bannerTotalW = 16 * 12;
+      for (const b of this.bannerPool) {
+        b.mesh.position.x = b.baseX - (this.scrollX * 0.85) % bannerTotalW;
+      }
+    }
+
+    // Curbs: scroll with ground (1.0x)
+    if (this.curbPool) {
+      const curbW = this.curbTotalW || 50;
+      for (const c of this.curbPool) {
+        if (c && c.mesh && c.mesh.position) {
+          c.mesh.position.x = c.baseX - (this.scrollX) % curbW;
+        }
+      }
+    }
+  }
+
+  /* ----- Main render ----- */
+  render(dt, game) {
+    if (!game) {
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+
+    const isGameOver = (game.state === STATE.GAME_OVER);
+    const speed = isGameOver ? 0 : getDifficulty(game.progress).speed;
+    this.speed = speed;
+
+    // Scroll world ONLY when playing (freezes like a statue on hit!)
+    if (!isGameOver) {
+      this.scrollWorld(speed * dt, speed);
+    }
+
+    // Sync horse
+    this.syncHorse(game.jumpY, game.animState, game.animFrame, game.state);
+    this._lastVY = game.jumpVY;
+
+    // Sync hurdles
+    this.syncHurdles(game.hurdles);
+
+    // Dust: continuous rich hoof dust trail while running
+    if (game.state === STATE.PLAYING && !game.isAirborne && Math.random() < 0.85) {
+      this.emitDust(GC.world.horseX - 0.8, 0.2, 0.8, 6, 1.2);
+    }
+    this.updateDust(dt);
+
+    // Camera
+    this.updateCamera(dt, game.jumpY, speed, game.hardMode);
+
+    // 5-Stage Environmental Progression Controller (0-30%, 30-50%, 50-75%, 75-90%, 90-100%)
+    const pct = game ? game.progress : 0;
+    const stageMultiplier = (pct < 30) ? 1.0 : (pct < 50) ? 1.3 : (pct < 75) ? 1.7 : (pct < 90) ? 2.2 : 3.0;
+
+    const t = performance.now() * 0.001;
+    this.frameCount = (this.frameCount || 0) + 1;
+
+    // 1. Instanced Spectator Crowd Animation (Staggered updates for 60 FPS mobile performance)
+    if (this.crowdMesh && this.crowdData) {
+      const dummy = new THREE.Object3D();
+      for (let i = 0; i < this.crowdData.length; i++) {
+        // Stagger matrix updates: update 1/3 of spectators per frame
+        if (i % 3 === this.frameCount % 3) {
+          const c = this.crowdData[i];
+          const cheerFreq = 4.0 * stageMultiplier;
+          const yBob = c.baseY + Math.sin(t * cheerFreq + c.offset) * (0.15 * stageMultiplier);
+          const xSway = c.baseX + Math.cos(t * 2.0 + c.offset) * (0.05 * stageMultiplier);
+
+          dummy.position.set(xSway, yBob, c.baseZ);
+          dummy.updateMatrix();
+          this.crowdMesh.setMatrixAt(i, dummy.matrix);
+        }
+      }
+      this.crowdMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    // 2. 70 Champagne-Gold Glittering Running Lights (Traveling along both track edges)
+    if (this.runningLights) {
+      const lightTotalW = 70 * 4;
+      for (const l of this.runningLights) {
+        l.mesh.position.x = l.baseX - (this.scrollX * 2.0 * stageMultiplier) % lightTotalW;
+        if (l.mesh.position.x < -30) l.baseX += lightTotalW;
+        if (l.mesh.position.x > 70)  l.baseX -= lightTotalW;
+
+        l.mesh.material.opacity = 0.5 + Math.sin(t * 8.0 + l.baseX) * 0.35;
+      }
+    }
+
+    // 3. Dynamic 3D Finish Gate Position (Calculated dynamically at 95% course progress)
+    if (this.finishGateGroup && game) {
+      const targetFinishX = (0.95 * game.totalCourseDistance) - game.distanceTraveled;
+      this.finishGateGroup.position.x = targetFinishX;
+    }
+
+    // 4. Sweeping Floodlight Spotlight Beams
+    if (this.spotlights) {
+      for (const s of this.spotlights) {
+        s.mesh.rotation.z = Math.sin(t * (1.2 * stageMultiplier) + s.offset) * 0.35;
+        s.mesh.rotation.x = Math.PI / 3 + Math.cos(t * 0.8 + s.offset) * 0.08;
+      }
+    }
+
+    // 5. Update Confetti Particles
+    this.updateConfetti(dt);
+
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  renderStatic() {
+    this.updateCamera(0.016, 0, 8, false);
+    this.renderer.render(this.scene, this.camera);
+  }
+}
+
+/* ========================= GAME CLASS ===================================== */
+class Game {
+  constructor(env) {
+    this.env = env;
+    this.state = STATE.START;
+    this.animState = ANIM.IDLE;
+
+    this.progress = 0;
+    this.hardMode = false;
+    this.hurdlesCleared = 0;
+    this.hurdlesAttempted = 0;
+    this.firstHurdlePassed = false;
+
+    // Timer state
+    this.elapsedTime   = 0;
+    this.remainingTime = TIMER_CONFIG.initialSeconds;
+
+    // Result object
+    this.lastResultData = null;
+
+    // Physics (world units)
+    this.jumpY  = 0;
+    this.jumpVY = 0;
+    this.isAirborne = false;
+
+    // Hurdles
+    this.hurdles = [];
+    this.spawnTimer = 0;
+    this.timePlayed = 0;
+
+    // Animation
+    this.animTimer  = 0;
+    this.animFrame  = 0;
+    this.idleTimer  = 0;
+    this.idleFrame  = 0;
+
+    this.lastTime = performance.now();
+    this._bindInput();
+  }
+
+  _bindInput() {
+    const jump = (e) => { if (e) e.preventDefault(); this.requestJump(); };
+    window.addEventListener('keydown', e => {
+      if (e.code === 'Space' || e.code === 'ArrowUp') jump(e);
+    });
+    const btn = document.getElementById('jumpBtn');
+    const press   = e => { btn.classList.add('pressed'); jump(e); };
+    const release = () => btn.classList.remove('pressed');
+    btn.addEventListener('touchstart', press, { passive: false });
+    btn.addEventListener('touchend', release);
+    btn.addEventListener('mousedown', press);
+    btn.addEventListener('mouseup', release);
+    btn.addEventListener('mouseleave', release);
+
+    document.getElementById('muteBtn').addEventListener('click', () => {
+      const m = !Sound.isMuted();
+      Sound.setMuted(m);
+      document.getElementById('muteBtn').textContent = m ? '🔇' : '🔊';
+    });
+  }
+
+  requestJump() {
+    if (this.state !== STATE.PLAYING || this.isAirborne) return;
+    this.isAirborne = true;
+    this.jumpVY = GC.player.jumpVelocity;
+    this.animState = ANIM.JUMP;
+    this.animFrame = 0;
+    this.animTimer = 0;
+    this.env.triggerJumpDust();
+    Sound.jump();
+  }
+
+  getDiff() { return getDifficulty(this.progress); }
+
+  reset() {
+    this.progress = 0;
+    this.distanceTraveled = 0;
+    this.totalCourseDistance = 720; // 720 world units total course length (~35s at ~20 units/s)
+    this.hardMode = false;
+    this.hurdlesCleared = 0;
+    this.hurdlesAttempted = 0;
+    this.firstHurdlePassed = false;
+
+    this.elapsedTime = 0;
+    this.remainingTime = TIMER_CONFIG.initialSeconds;
+
+    this.hurdles = [];
+    this.spawnTimer = 500; // ultra fast initial delay ~0.5s so first hurdle arrives instantly!
+    this.timePlayed = 0;
+    this.jumpY  = 0;
+    this.jumpVY = 0;
+    this.isAirborne = false;
+    this.animState = ANIM.RUN;
+    this.animFrame = 0;
+    this.animTimer = 0;
+    this.idleFrame = 0;
+    this.idleTimer = 0;
+    updateHUD(this);
+    setModeUI(false);
+  }
+
+  start() {
+    this.reset();
+    this.state = STATE.PLAYING;
+    this.lastTime = performance.now();
+    Sound.startMusic();
+    showScreen(null);
+  }
+
+  getStats() {
+    const accuracy = this.hurdlesAttempted > 0 ? (this.hurdlesCleared / this.hurdlesAttempted) : (this.firstHurdlePassed ? 1 : 0);
+    return {
+      progress: Math.floor(this.progress),
+      elapsedTime: this.elapsedTime.toFixed(2),
+      remainingTime: this.remainingTime.toFixed(2),
+      hurdlesAttempted: this.hurdlesAttempted,
+      hurdlesCleared: this.hurdlesCleared,
+      accuracy: accuracy,
+      firstHurdlePassed: this.firstHurdlePassed,
+      hardModeReached: this.hardMode,
+      completed: this.state === STATE.VICTORY,
+      timedOut: this.state === STATE.TIMEOUT,
+    };
+  }
+
+  gameOver() {
+    this.state = STATE.GAME_OVER;
+    this.animState = ANIM.HIT;
+    Sound.hit();
+    Sound.stopGallop();
+    Sound.stopMusic();
+
+    const stats = this.getStats();
+    const reward = calculateReward(this.progress, this.elapsedTime, this.remainingTime, stats);
+    stats.reward = reward;
+    this.lastResultData = stats;
+    console.log('🏁 GAME OVER RESULT:', stats);
+
+    document.getElementById('overProgress').textContent = stats.progress + '%';
+    document.getElementById('overAccuracy').textContent = Math.round(stats.accuracy * 100) + '%';
+    document.getElementById('overReward').textContent = reward + '% OFF';
+
+    if (!stats.firstHurdlePassed) {
+      document.getElementById('overTitle').textContent = 'Failed 1st Hurdle';
+      document.getElementById('overDesc').textContent = 'You must clear at least the 1st hurdle to earn a discount.';
+    } else {
+      document.getElementById('overTitle').textContent = 'Hurdle Missed';
+      document.getElementById('overDesc').textContent = 'The horse caught the rail. Here is your earned discount.';
+    }
+
+    setTimeout(() => showScreen('screenOver'), 500);
+  }
+
+  timeOut() {
+    this.state = STATE.TIMEOUT;
+    Sound.stopGallop();
+    Sound.stopMusic();
+
+    const stats = this.getStats();
+    const reward = calculateReward(this.progress, this.elapsedTime, 0, stats);
+    stats.reward = reward;
+    this.lastResultData = stats;
+    console.log('🏁 TIMEOUT RESULT:', stats);
+
+    document.getElementById('timeProgress').textContent = stats.progress + '%';
+    document.getElementById('timeAccuracy').textContent = Math.round(stats.accuracy * 100) + '%';
+    document.getElementById('timeReward').textContent = reward + '% OFF';
+
+    setTimeout(() => showScreen('screenTimeout'), 400);
+  }
+
+  victory() {
+    this.state = STATE.VICTORY;
+    Sound.victory();
+    Sound.stopGallop();
+    Sound.stopMusic();
+
+    const stats = this.getStats();
+    const reward = calculateReward(100, this.elapsedTime, this.remainingTime, stats);
+    stats.reward = reward;
+    this.lastResultData = stats;
+    console.log('🏁 VICTORY RESULT:', stats);
+
+    document.getElementById('victoryTime').textContent = stats.elapsedTime + 's';
+    document.getElementById('victoryAccuracy').textContent = Math.round(stats.accuracy * 100) + '%';
+    document.getElementById('victoryReward').textContent = reward + '% OFF';
+
+    setTimeout(() => showScreen('screenVictory'), 350);
+  }
+
+  setProgress(val) {
+    const wasHard = this.hardMode;
+    this.progress = Math.min(100, Math.max(0, val));
+    if (!wasHard && this.progress >= GC.progression.hardModeUnlock) {
+      this.hardMode = true;
+      setModeUI(true);
+      Sound.hardMode();
+      flashHardModeBanner();
+    }
+    if (this.progress >= GC.progression.completion) {
+      this.victory();
+    }
+  }
+
+  spawnHurdle() {
+    const diff = this.getDiff();
+    
+    // Mismatched hurdle height pattern: alternate small/low, medium, and tall hurdles
+    const typePattern = [0, 2, 0, 1, 2, 1, 0, 2]; // 0=small/low, 1=medium, 2=tall
+    const hurdleIndex = this.hurdlesAttempted + this.hurdles.length;
+    const hType = typePattern[hurdleIndex % typePattern.length];
+
+    let railH = 1.05;
+    if (hType === 0) {
+      // Small/Low hurdle
+      railH = 0.82 + Math.random() * 0.06;
+    } else if (hType === 1) {
+      // Medium hurdle
+      railH = 1.08 + Math.random() * 0.08;
+    } else {
+      // Tall hurdle
+      railH = 1.32 + Math.random() * 0.10;
+    }
+
+    const style = Math.floor(Math.random() * 5); // 5 visual hurdle variations
+    this.hurdles.push({
+      x:       GC.world.spawnX,
+      height:  railH,
+      style:   style,
+      cleared: false,
+    });
+  }
+
+  update(dt) {
+    if (this.state !== STATE.PLAYING) {
+      Sound.stopGallop();
+      return;
+    }
+
+    const diff  = this.getDiff();
+    const speed = diff.speed;
+    this.timePlayed += dt;
+
+    // Track distance traveled for world elements & finish gate
+    this.distanceTraveled += speed * dt;
+
+    // Countdown Timer Logic
+    if (TIMER_CONFIG.enabled) {
+      this.elapsedTime += dt;
+      this.remainingTime = Math.max(0, TIMER_CONFIG.initialSeconds - this.elapsedTime);
+      if (this.remainingTime <= 0) {
+        this.timeOut();
+        return;
+      }
+    }
+
+    if (!this.isAirborne) {
+      Sound.updateGallop(dt, speed);
+    } else {
+      Sound.stopGallop();
+    }
+
+    /* -- Jump physics -- */
+    if (this.isAirborne) {
+      this.jumpY  += this.jumpVY * dt;
+      this.jumpVY -= GC.player.gravity * dt;
+      if (this.jumpY <= 0) {
+        this.jumpY  = 0;
+        this.jumpVY = 0;
+        this.isAirborne = false;
+        this.animState  = ANIM.RUN;
+        this.animFrame  = 0;
+        this.animTimer  = 0;
+        this.env.triggerLandingDust();
+        Sound.land();
+      }
+    }
+
+    /* -- Animation timing -- */
+    this.animTimer += dt;
+    if (this.animState === ANIM.RUN) {
+      if (this.animTimer >= GC.player.runFrameTime) {
+        this.animTimer = 0;
+        this.animFrame = (this.animFrame + 1) % 3;
+      }
+    } else if (this.animState === ANIM.JUMP) {
+      if (this.animTimer >= 0.08) {
+        this.animTimer = 0;
+        this.animFrame = (this.animFrame + 1) % 3;
+      }
+    }
+
+    /* -- Hurdle spawn -- */
+    this.spawnTimer -= dt * 1000;
+    if (this.spawnTimer <= 0 && this.hurdles.length < 5) {
+      this.spawnHurdle();
+      const [mn, mx] = diff.gapMs;
+      this.spawnTimer = mn + Math.random() * (mx - mn);
+    }
+
+    /* -- Move & collide hurdles -- */
+    for (let i = this.hurdles.length - 1; i >= 0; i--) {
+      const h = this.hurdles[i];
+      h.x -= speed * dt;
+
+      /* Collision: horse at X=0, check X proximity and height */
+      const hX = Math.abs(h.x);
+      const inRange = hX < GC.collision.hurdleHalfX;
+
+      if (inRange && !h.attempted) {
+        h.attempted = true;
+        this.hurdlesAttempted++;
+      }
+
+      if (inRange && this.state === STATE.PLAYING && this.timePlayed > GC.player.gracePeriod) {
+        const horseBottom = GC.collision.horseBoxY0 + this.jumpY;
+        const cleared = horseBottom >= h.height;
+        if (!cleared) {
+          this.gameOver();
+          return;
+        }
+      }
+
+      /* Cleared: hurdle passed horse */
+      if (!h.cleared && h.x < -GC.collision.hurdleHalfX - 0.5) {
+        h.cleared = true;
+        this.firstHurdlePassed = true;
+        this.hurdlesCleared++;
+        Sound.clear();
+        this.env.triggerClearEffect();
+        spawnFloatingText('+1% OFF');
+
+        // Progress bar percentage tied directly to 15 hurdle victory goal (15 hurdles = 100% progress!)
+        const p = Math.min(100, Math.round((this.hurdlesCleared / 15) * 100));
+        this.setProgress(p);
+
+        // Rule: End the game immediately in VICTORY when 15% MAX discount (15 hurdles cleared) is reached!
+        if (this.hurdlesCleared >= 15) {
+          this.setProgress(100);
+          this.victory();
+          return;
+        }
+
+        if (this.state !== STATE.PLAYING) return;
+      }
+
+      /* Remove far-behind hurdles */
+      if (h.x < GC.world.recycleX) {
+        this.hurdles.splice(i, 1);
+      }
+    }
+
+    updateHUD(this);
+  }
+
+  loop(now) {
+    const dt = Math.min((now - this.lastTime) / 1000, 0.05);
+    this.lastTime = now;
+
+    if (this.state === STATE.START) {
+      // Idle animation
+      this.idleTimer += dt;
+      if (this.idleTimer >= GC.player.idleFrameTime) {
+        this.idleTimer = 0;
+        this.idleFrame = (this.idleFrame + 1) % 2;
+      }
+      this.animState = ANIM.IDLE;
+      this.animFrame = this.idleFrame;
+      this.env.syncHorse(0, ANIM.IDLE, this.idleFrame, STATE.START);
+      // Background scrolls slowly on start screen
+      this.env.scrollWorld(6 * dt, 6);
+      this.env.updateCamera(dt, 0, 6, false);
+      this.env.updateDust(dt);
+      this.env.renderer.render(this.env.scene, this.env.camera);
+    } else {
+      this.update(dt);
+      this.env.render(dt, this);
+    }
+
+    requestAnimationFrame(t => this.loop(t));
+  }
+}
+
+/* ====================== UI HELPERS ======================================== */
+function updateHUD(game) {
+  const pct = Math.floor(game.progress);
+  document.getElementById('progressPill').innerHTML = `PROGRESS: <b>${pct}%</b>`;
+  document.getElementById('progressFill').style.width = pct + '%';
+  
+  const stats = game.getStats ? game.getStats() : { firstHurdlePassed: game.hurdlesCleared > 0 };
+  const reward = calculateReward(game.progress, game.elapsedTime, game.remainingTime, stats);
+  document.getElementById('rewardPill').innerHTML = `REWARD: <b>${reward}% OFF</b>`;
+
+  // Timer HUD update
+  const timerPill = document.getElementById('timerPill');
+  const timerVal  = document.getElementById('timerVal');
+  if (timerPill && timerVal) {
+    const sec = Math.max(0, game.remainingTime);
+    const m = Math.floor(sec / 60);
+    const s = (sec % 60).toFixed(2);
+    timerVal.textContent = `${m.toString().padStart(2,'0')}:${s.padStart(5,'0')}`;
+    
+    timerPill.classList.toggle('warning', sec <= TIMER_CONFIG.warningSeconds && sec > TIMER_CONFIG.criticalSeconds);
+    timerPill.classList.toggle('critical', sec <= TIMER_CONFIG.criticalSeconds);
+  }
+}
+
+function setModeUI(hard) {
+  const pill = document.getElementById('modePill');
+  pill.classList.toggle('hard', hard);
+  pill.innerHTML = `MODE: <b>${hard ? 'HARD' : 'NORMAL'}</b>`;
+}
+
+function flashHardModeBanner() {
+  const el = document.getElementById('hardModeBanner');
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1400);
+}
+
+function spawnFloatingText(text) {
+  const layer = document.getElementById('feedbackLayer');
+  const el = document.createElement('div');
+  el.className = 'float-pop';
+  el.textContent = text;
+  el.style.left = '22%';
+  el.style.top  = '40%';
+  layer.appendChild(el);
+  setTimeout(() => el.remove(), 950);
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.overlay').forEach(el => el.classList.remove('active'));
+  const hint = document.getElementById('startHint');
+  hint.style.display = (id === null) ? 'block' : 'none';
+  if (id) document.getElementById(id).classList.add('active');
+}
+
+/* ====================== BOOT ============================================== */
+(async function init() {
+  await loadAllAssets();
+
+  const env  = new ThreeEnv();
+  const game = new Game(env);
+
+  document.getElementById('btnStart').addEventListener('click', () => game.start());
+  document.getElementById('btnRetry').addEventListener('click', () => game.start());
+  document.getElementById('btnVictoryRestart').addEventListener('click', () => game.start());
+  const btnTimeout = document.getElementById('btnTimeoutRetry');
+  if (btnTimeout) btnTimeout.addEventListener('click', () => game.start());
+
+  document.getElementById('startHint').style.display = 'none';
+
+  requestAnimationFrame(t => { game.lastTime = t; game.loop(t); });
+})();

@@ -1,0 +1,105 @@
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="game"></canvas>
+
+    <style>
+      #timerPill.warning{border-color:#e8a838;color:#ffda73;}
+      #timerPill.warning b{color:#ffe599;}
+      #timerPill.critical{border-color:#ff4d4d;color:#ff9999;animation:timerPulse 0.5s infinite alternate;}
+      @keyframes timerPulse{0%{transform:scale(1);}100%{transform:scale(1.06);border-color:#ff1a1a;}}
+    </style>
+
+    <div id="hud">
+      <div class="hud-row">
+        <div class="hud-pill" id="modePill">MODE: <b>NORMAL</b></div>
+        <div id="progressWrap"><div id="hardMarker"></div><div id="progressFill"></div></div>
+        <div class="hud-pill" id="progressPill">PROGRESS: <b>0%</b></div>
+      </div>
+      <div class="hud-row">
+        <div class="hud-pill" id="rewardPill">REWARD: <b>0% OFF</b></div>
+        <div class="hud-pill" id="timerPill">TIME: <b id="timerVal">00:40.00</b></div>
+      </div>
+    </div>
+
+    <div id="feedbackLayer"></div>
+    <div id="hardModeBanner">HARD MODE UNLOCKED!</div>
+    <div id="startHint">SPACE / &#8593; / TAP JUMP TO CLEAR HURDLES</div>
+
+    <button id="jumpBtn"><span class="lbl">JUMP<small>&#9650;</small></span></button>
+    <button id="muteBtn">&#128266;</button>
+
+    <!-- START SCREEN -->
+    <div class="overlay active" id="screenStart">
+      <div class="card">
+        <div class="eyebrow">ROYAL CHAMPIONSHIP DERBY &bull; TICKET DISCOUNT</div>
+        <h1>Race for Discount</h1>
+        <img class="hero-img" id="startHero" alt="Horse and rider">
+        <p>Clear every hurdle on the championship course. The first hurdle counts &mdash; miss it and you earn nothing. A fast, clean round earns up to <b>15% OFF</b> your ticket.</p>
+        <button class="btn gold" id="btnStart">START RIDE</button>
+        <div class="small-note">
+          Desktop: <span class="kbd">SPACE</span> or <span class="kbd">&#8593;</span> &nbsp;&bull;&nbsp; Mobile: tap JUMP
+        </div>
+      </div>
+    </div>
+
+    <!-- GAME OVER SCREEN -->
+    <div class="overlay" id="screenOver">
+      <div class="card">
+        <div class="eyebrow">RUN OVER</div>
+        <h1 id="overTitle">Hurdle Missed</h1>
+        <p id="overDesc">The horse caught the rail. Here is your earned discount.</p>
+        <div class="stat-row">
+          <div class="stat-box"><div class="label">PROGRESS</div><div class="value" id="overProgress">0%</div></div>
+          <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="overAccuracy">0%</div></div>
+          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="overReward">0% OFF</div></div>
+        </div>
+        <button class="btn" id="btnRetry">TRY AGAIN</button>
+      </div>
+    </div>
+
+    <!-- TIMEOUT SCREEN -->
+    <div class="overlay" id="screenTimeout">
+      <div class="card">
+        <div class="eyebrow">TIME EXPIRED</div>
+        <h1>Time Up!</h1>
+        <p>You ran out of time on the course. Here is your discount based on distance &amp; accuracy.</p>
+        <div class="stat-row">
+          <div class="stat-box"><div class="label">PROGRESS</div><div class="value" id="timeProgress">0%</div></div>
+          <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="timeAccuracy">0%</div></div>
+          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="timeReward">0% OFF</div></div>
+        </div>
+        <button class="btn" id="btnTimeoutRetry">TRY AGAIN</button>
+      </div>
+    </div>
+
+    <!-- VICTORY SCREEN -->
+    <div class="overlay" id="screenVictory">
+      <div class="card">
+        <div class="eyebrow">COURSE COMPLETE</div>
+        <h1>Championship Round!</h1>
+        <p>Exceptional ride! Show your final discount result at the ticket counter.</p>
+        <div class="stat-row">
+          <div class="stat-box"><div class="label">TIME</div><div class="value" id="victoryTime">00:00</div></div>
+          <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="victoryAccuracy">0%</div></div>
+          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="victoryReward">0% OFF</div></div>
+        </div>
+        <button class="btn gold" id="btnVictoryRestart">RIDE AGAIN</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+__GAME_CODE__
+</script>
+</body>
+</html>

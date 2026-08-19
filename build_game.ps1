@@ -1,135 +1,33 @@
 # build_game.ps1
-# Builds horse-jump-game.html from:
-#   - CSS/HTML structure: taken from backup\horse-jump-game.html (lines 0..286)
-#   - Game logic:         new_game_code.js
-#   - Sprites:            sprites\ folder (loaded at runtime, NOT embedded)
+# Builds index.html from:
+#   - CSS/HTML head:  backup\horse-jump-game.html  (everything up to and including </style>)
+#   - Body markup:    _body_template.html
+#   - Game logic:     new_game_code.js
+#   - Sprites:        sprites\ folder (loaded at runtime, NOT embedded)
 #
-# IMPORTANT: sprites\ folder must sit next to horse-jump-game.html when served.
+# IMPORTANT: the sprites\ folder must sit next to index.html when served.
 # To update any sprite, just replace its PNG in the sprites\ folder.
+#
+# NOTES:
+#  * The head is located by searching for </style>, not a hard-coded line
+#    number, so editing the CSS can never silently break the build.
+#  * String .Replace() is used instead of -replace because the game code
+#    contains  ${...}  template literals that PowerShell regex would mangle.
 
-$srcOriginal = Get-Content 'backup\horse-jump-game.html' -Raw -Encoding UTF8
-$origLines   = $srcOriginal -split "`n"
+$origLines = (Get-Content 'backup\horse-jump-game.html' -Raw -Encoding UTF8) -split "`n"
 
-# Keep the HTML <head> with all the CSS (lines 0..286, ends with </style>)
-$htmlHead = ($origLines[0..286]) -join "`n"
-
-# Read the new Three.js game code
-$newCode = Get-Content 'new_game_code.js' -Raw -Encoding UTF8
-
-# -------------------------------------------------------------------------
-# Assemble the HTML file — no more inline ASSET_B64 script block!
-# Sprites are loaded from the sprites/ folder at runtime.
-# -------------------------------------------------------------------------
-$newHtml = @"
-$htmlHead
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
-  }
+$styleEnd = -1
+for ($i = 0; $i -lt $origLines.Length; $i++) {
+  if ($origLines[$i].Trim() -eq '</style>') { $styleEnd = $i }
 }
-</script>
-</head>
-<body>
-<div id="app">
-  <div id="stage">
-    <canvas id="game"></canvas>
+if ($styleEnd -lt 0) { throw 'Could not find </style> in backup\horse-jump-game.html' }
 
-    <style>
-      #timerPill.warning{border-color:#e8a838;color:#ffda73;}
-      #timerPill.warning b{color:#ffe599;}
-      #timerPill.critical{border-color:#ff4d4d;color:#ff9999;animation:timerPulse 0.5s infinite alternate;}
-      @keyframes timerPulse{0%{transform:scale(1);}100%{transform:scale(1.06);border-color:#ff1a1a;}}
-    </style>
+$htmlHead = ($origLines[0..$styleEnd]) -join "`n"
+$newCode  = Get-Content 'new_game_code.js'    -Raw -Encoding UTF8
+$body     = Get-Content '_body_template.html' -Raw -Encoding UTF8
 
-    <div id="hud">
-      <div class="hud-row">
-        <div class="hud-pill" id="modePill">MODE: <b>NORMAL</b></div>
-        <div id="progressWrap"><div id="hardMarker"></div><div id="progressFill"></div></div>
-        <div class="hud-pill" id="progressPill">PROGRESS: <b>0%</b></div>
-      </div>
-      <div class="hud-row">
-        <div class="hud-pill" id="rewardPill">REWARD: <b>0% OFF</b></div>
-        <div class="hud-pill" id="timerPill">TIME: <b id="timerVal">00:40.00</b></div>
-      </div>
-    </div>
+$newHtml = $htmlHead + "`n" + $body.Replace('__GAME_CODE__', $newCode)
 
-    <div id="feedbackLayer"></div>
-    <div id="hardModeBanner">HARD MODE UNLOCKED!</div>
-    <div id="startHint">SPACE / &#8593; / TAP JUMP TO CLEAR HURDLES</div>
-
-    <button id="jumpBtn"><span class="lbl">JUMP<small>&#9650;</small></span></button>
-    <button id="muteBtn">&#128266;</button>
-
-    <!-- START SCREEN -->
-    <div class="overlay active" id="screenStart">
-      <div class="card">
-        <div class="eyebrow">HORSE RACING TICKET DISCOUNT</div>
-        <h1>Race for Discount</h1>
-        <img class="hero-img" id="startHero" alt="Horse and rider">
-        <p>Jump over every hurdle on the racecourse! First hurdle required. Fast speed and high accuracy earn up to 100% OFF your ticket.</p>
-        <button class="btn gold" id="btnStart">START RIDE</button>
-        <div class="small-note">
-          Desktop: <span class="kbd">SPACE</span> or <span class="kbd">&#8593;</span> &nbsp;&bull;&nbsp; Mobile: tap JUMP
-        </div>
-      </div>
-    </div>
-
-    <!-- GAME OVER SCREEN -->
-    <div class="overlay" id="screenOver">
-      <div class="card">
-        <div class="eyebrow">RUN OVER</div>
-        <h1 id="overTitle">Hurdle Missed</h1>
-        <p id="overDesc">The horse caught the rail. Here is your earned discount.</p>
-        <div class="stat-row">
-          <div class="stat-box"><div class="label">PROGRESS</div><div class="value" id="overProgress">0%</div></div>
-          <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="overAccuracy">0%</div></div>
-          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="overReward">0% OFF</div></div>
-        </div>
-        <button class="btn" id="btnRetry">TRY AGAIN</button>
-      </div>
-    </div>
-
-    <!-- TIMEOUT SCREEN -->
-    <div class="overlay" id="screenTimeout">
-      <div class="card">
-        <div class="eyebrow">TIME EXPIRED</div>
-        <h1>Time Up!</h1>
-        <p>You ran out of time on the course. Here is your discount based on distance & accuracy.</p>
-        <div class="stat-row">
-          <div class="stat-box"><div class="label">PROGRESS</div><div class="value" id="timeProgress">0%</div></div>
-          <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="timeAccuracy">0%</div></div>
-          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="timeReward">0% OFF</div></div>
-        </div>
-        <button class="btn" id="btnTimeoutRetry">TRY AGAIN</button>
-      </div>
-    </div>
-
-    <!-- VICTORY SCREEN -->
-    <div class="overlay" id="screenVictory">
-      <div class="card">
-        <div class="eyebrow">COURSE COMPLETE</div>
-        <h1>Championship Round!</h1>
-        <p>Exceptional ride! Show your final discount result at the ticket counter.</p>
-        <div class="stat-row">
-          <div class="stat-box"><div class="label">TIME</div><div class="value" id="victoryTime">00:00</div></div>
-          <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="victoryAccuracy">100%</div></div>
-          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="victoryReward">100% OFF</div></div>
-        </div>
-        <button class="btn gold" id="btnVictoryRestart">RIDE AGAIN</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script type="module">
-$newCode
-</script>
-</body>
-</html>
-"@
-
-Set-Content 'index.html' -Value $newHtml -Encoding UTF8
+Set-Content 'index.html' -Value $newHtml -Encoding UTF8 -NoNewline
 if (Test-Path 'horse-jump-game.html') { Remove-Item 'horse-jump-game.html' -Force }
 Write-Host "Done! Updated index.html (size: $((Get-Item 'index.html').Length) bytes)"
-Write-Host "(Removed horse-jump-game.html for GitHub Pages compatibility)"
