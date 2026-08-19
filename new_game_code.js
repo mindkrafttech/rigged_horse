@@ -2377,13 +2377,16 @@ class ThreeEnv {
   /* ----- Horse visual + soft dynamic shadow ----- */
   syncHorse(jumpY, animState, animFrame, gameState) {
     const H = GC.player.horseHeight;
-    this.horseMesh.position.y = H / 2 + jumpY;
+    const isMobile = (this.camera && (this.camera.aspect < 1.1 || window.innerWidth < 768));
+    const hScale = isMobile ? 0.82 : 1.0;
+    this.horseMesh.scale.set(hScale, hScale, 1);
+    this.horseMesh.position.y = (H * hScale) / 2 + jumpY;
 
     // shadow: big & dark on the ground, small & faint in the air,
     // with a brief contact pulse on landing
     this._landPulse = Math.max(0, (this._landPulse || 0) - 0.06);
     const airT = Math.min(1, jumpY / 2.4);
-    const sc = (1.0 - airT * 0.45) * (1 + this._landPulse * 0.22);
+    const sc = (1.0 - airT * 0.45) * (1 + this._landPulse * 0.22) * hScale;
     this.horseShadow.scale.set(sc, sc, 1);
     this.horseShadow.material.opacity = (0.58 - airT * 0.36) * (1 + this._landPulse * 0.3);
 
@@ -2432,7 +2435,7 @@ class ThreeEnv {
   updateCamera(dt, jumpY, speed, hardMode) {
     if (this.cameraMode === undefined) this.cameraMode = 0;
     const aspect = this.camera.aspect || 1.0;
-    const isMobilePortrait = aspect < 1.1;
+    const isMobilePortrait = (aspect < 1.1 || window.innerWidth < 768);
 
     let targetZ, targetCamX, targetY, lookX, lookY;
     const jumpFollow = jumpY * 0.25;
@@ -2446,32 +2449,32 @@ class ThreeEnv {
 
     switch (this.cameraMode) {
       case 1: // CLOSE-UP / ACTION
-        targetZ = (isMobilePortrait ? 9.5 : 8.2) + (hardMode ? 0 : 0.3);
-        targetCamX = isMobilePortrait ? -1.8 : -0.2;
-        targetY = (isMobilePortrait ? 3.4 : 3.2) + jumpFollow * 0.8 + bounce;
-        lookX = (isMobilePortrait ? 2.0 : 4.2) + sway;
+        targetZ = (isMobilePortrait ? 11.8 : 8.2) + (hardMode ? 0 : 0.3);
+        targetCamX = isMobilePortrait ? -2.4 : -0.2;
+        targetY = (isMobilePortrait ? 3.8 : 3.2) + jumpFollow * 0.8 + bounce;
+        lookX = (isMobilePortrait ? 3.0 : 4.2) + sway;
         lookY = 1.2 + jumpY * 0.15;
         break;
       case 2: // BROADCAST / HIGH OVERVIEW
-        targetZ = (isMobilePortrait ? 16.5 : 15.0);
-        targetCamX = isMobilePortrait ? -3.0 : -1.5;
-        targetY = (isMobilePortrait ? 8.0 : 8.5) + jumpFollow * 0.5;
-        lookX = (isMobilePortrait ? 2.5 : 5.5) + sway;
+        targetZ = (isMobilePortrait ? 18.5 : 15.0);
+        targetCamX = isMobilePortrait ? -3.8 : -1.5;
+        targetY = (isMobilePortrait ? 8.8 : 8.5) + jumpFollow * 0.5;
+        lookX = (isMobilePortrait ? 3.5 : 5.5) + sway;
         lookY = 0.5;
         break;
       case 3: // CINEMATIC DYNAMIC ANGLED
-        targetZ = (isMobilePortrait ? 11.5 : 9.8);
-        targetCamX = isMobilePortrait ? -4.0 : -3.2;
-        targetY = (isMobilePortrait ? 2.6 : 2.5) + jumpFollow * 0.7 + bounce * 0.5;
-        lookX = (isMobilePortrait ? 2.8 : 4.8) + sway;
+        targetZ = (isMobilePortrait ? 13.8 : 9.8);
+        targetCamX = isMobilePortrait ? -4.5 : -3.2;
+        targetY = (isMobilePortrait ? 3.0 : 2.5) + jumpFollow * 0.7 + bounce * 0.5;
+        lookX = (isMobilePortrait ? 3.8 : 4.8) + sway;
         lookY = 1.4 + jumpY * 0.2;
         break;
       case 0: // SIDE (Default Classic)
       default:
-        targetZ = (isMobilePortrait ? 13.5 : 12.0) + (hardMode ? 0 : 0.5);
-        targetCamX = isMobilePortrait ? -2.5 : -1.0;
-        targetY = (isMobilePortrait ? 4.2 : 4.5) + jumpFollow + bounce;
-        lookX = (isMobilePortrait ? 1.5 : 5.0) + sway;
+        targetZ = (isMobilePortrait ? 16.5 : 12.0) + (hardMode ? 0 : 0.5);
+        targetCamX = isMobilePortrait ? -3.8 : -1.0;
+        targetY = (isMobilePortrait ? 4.8 : 4.5) + jumpFollow + bounce;
+        lookX = (isMobilePortrait ? 3.2 : 5.0) + sway;
         lookY = 1.0 + jumpY * 0.12;
         break;
     }
@@ -2606,63 +2609,52 @@ async function checkExistingPlayer(mobile) {
   const cleanMobile = (mobile || '').trim();
   if (!cleanMobile) return null;
 
-  // Check local storage first
-  let localRecord = null;
-  try {
-    const raw = localStorage.getItem('derby_player_' + cleanMobile);
-    if (raw) {
-      localRecord = JSON.parse(raw);
-    }
-  } catch(e){}
-
-  if (!supabase) return localRecord;
-
-  try {
-    const { data, error } = await supabase
-      .from('game_registrations')
-      .select('*')
-      .eq('mobile', cleanMobile);
-
-    if (error) {
-      const { data: fallbackData } = await supabase
-        .from('registrations')
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('game_registrations')
         .select('*')
         .eq('mobile', cleanMobile);
-      if (fallbackData && fallbackData.length > 0) {
-        return mergePlayerRecord(localRecord, fallbackData[0]);
+
+      let remoteRecord = null;
+      if (!error && data && data.length > 0) {
+        remoteRecord = data[0];
+      } else {
+        // Fallback table check
+        const { data: fallbackData } = await supabase
+          .from('registrations')
+          .select('*')
+          .eq('mobile', cleanMobile);
+        if (fallbackData && fallbackData.length > 0) {
+          remoteRecord = fallbackData[0];
+        }
       }
-      return localRecord;
+
+      if (remoteRecord) {
+        try {
+          localStorage.setItem('derby_player_' + cleanMobile, JSON.stringify(remoteRecord));
+        } catch(e){}
+        return remoteRecord;
+      } else {
+        // Record does not exist in Supabase DB (or was deleted by admin)
+        // Clear any stale local storage cache for this number so it gets 3 fresh attempts!
+        try {
+          localStorage.removeItem('derby_player_' + cleanMobile);
+        } catch(e){}
+        return null;
+      }
+    } catch (err) {
+      console.error('Supabase query error, fallback to local storage:', err);
     }
-    if (data && data.length > 0) {
-      return mergePlayerRecord(localRecord, data[0]);
-    }
-    return localRecord;
-  } catch (err) {
-    console.error('Check player error:', err);
-    return localRecord;
   }
-}
 
-function mergePlayerRecord(local, remote) {
-  if (!local) return remote;
-  if (!remote) return local;
-  // Take whichever has higher attempts_used or is completed
-  const localAttempts = parseInt(local.attempts_used || 0) || 0;
-  const remoteAttempts = parseInt(remote.attempts_used || 0) || 0;
-  const maxAttempts = Math.max(localAttempts, remoteAttempts);
-  
-  const localBest = parseInt(local.best_reward || '0') || 0;
-  const remoteBest = parseInt(remote.best_reward || '0') || 0;
-  const maxBest = Math.max(localBest, remoteBest);
+  // Fallback to local storage ONLY if offline or Supabase connection fails
+  try {
+    const raw = localStorage.getItem('derby_player_' + cleanMobile);
+    if (raw) return JSON.parse(raw);
+  } catch(e){}
 
-  return {
-    ...remote,
-    name: remote.name || local.name,
-    mobile: remote.mobile || local.mobile,
-    attempts_used: maxAttempts,
-    best_reward: maxBest + '% OFF',
-    completed: local.completed || remote.completed || maxAttempts >= 3 || maxBest >= 15
-  };
+  return null;
 }
 
 async function savePlayerRecord(name, mobile) {
@@ -2803,8 +2795,14 @@ class Game {
   _bindInput() {
     const jump = (e) => { if (e) e.preventDefault(); this.requestJump(); };
     window.addEventListener('keydown', e => {
-      const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const active = document.activeElement;
+      const activeTag = active ? active.tagName.toUpperCase() : '';
+      const targetTag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT' ||
+          targetTag === 'INPUT' || targetTag === 'TEXTAREA' || targetTag === 'SELECT' ||
+          (active && active.isContentEditable)) {
+        return;
+      }
 
       if (e.code === 'Space' || e.code === 'ArrowUp') jump(e);
       if (e.code === 'KeyC' || e.key === 'c' || e.key === 'C') {
@@ -3379,8 +3377,8 @@ function showScreen(id) {
         if (regError) regError.textContent = 'Please fill out all registration fields.';
         return;
       }
-      if (!/^\d{10}$/.test(mobile)) {
-        if (regError) regError.textContent = 'Please enter a valid 10-digit mobile number.';
+      if (!/^[6-9]\d{9}$/.test(mobile)) {
+        if (regError) regError.textContent = 'Please enter a valid 10-digit Indian mobile number (starts with 6, 7, 8, or 9).';
         return;
       }
 
