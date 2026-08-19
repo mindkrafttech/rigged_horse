@@ -276,7 +276,7 @@ function generateCouponCode(discountPct, mobile) {
     n = (n * 9301 + 49297) % 233280;
     hash += chars[Math.floor((n / 233280) * chars.length)];
   }
-  return `DERBY${discountPct}-${hash}`;
+  return `DERBY${discountPct}${hash}`;
 }
 
 function copyCouponCode(elementId, btnEl) {
