@@ -2594,61 +2594,50 @@ class ThreeEnv {
 }
 
 
-/* ----------------------------- SUPABASE INTEGRATION ----------------------- */
-const SUPABASE_URL = 'https://jqnsukjknzurrltosxxc.supabase.co';
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxbnN1a2prbnp1cnJsdG9zeHhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4MDM5MDYsImV4cCI6MjEwMjM3OTkwNn0.Wh1K6OBnUjtSy1spirHotpELOy2zZjEPDtUgyCEL5R0';
+/* ----------------------------- GOOGLE SHEETS INTEGRATION ------------------- */
+// Deployed Google Apps Script Web App URL:
+const GOOGLE_SHEET_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwnrDd7j1JgVfCvWnNQj_cHt4-ueHKUEEWIBfN4QbhvWNWoi5SS5ICfFvnAvJo_nbxdSw/exec';
 
-let supabase = null;
-if (typeof window !== 'undefined' && window.supabase && window.supabase.createClient) {
+async function callGoogleSheetAPI(params) {
+  if (!GOOGLE_SHEET_SCRIPT_URL || !GOOGLE_SHEET_SCRIPT_URL.trim()) {
+    return null;
+  }
   try {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-  } catch (e) { console.error('Supabase init error:', e); }
+    const url = new URL(GOOGLE_SHEET_SCRIPT_URL);
+    Object.keys(params).forEach(k => url.searchParams.append(k, params[k]));
+    const resp = await fetch(url.toString(), { credentials: 'omit' });
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    return json;
+  } catch (err) {
+    console.error('Google Sheet API error:', err);
+    return null;
+  }
 }
 
 async function checkExistingPlayer(mobile) {
   const cleanMobile = (mobile || '').trim();
   if (!cleanMobile) return null;
 
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('game_registrations')
-        .select('*')
-        .eq('mobile', cleanMobile);
-
-      let remoteRecord = null;
-      if (!error && data && data.length > 0) {
-        remoteRecord = data[0];
-      } else {
-        // Fallback table check
-        const { data: fallbackData } = await supabase
-          .from('registrations')
-          .select('*')
-          .eq('mobile', cleanMobile);
-        if (fallbackData && fallbackData.length > 0) {
-          remoteRecord = fallbackData[0];
-        }
-      }
-
-      if (remoteRecord) {
+  if (GOOGLE_SHEET_SCRIPT_URL && GOOGLE_SHEET_SCRIPT_URL.trim()) {
+    const res = await callGoogleSheetAPI({ action: 'check', mobile: cleanMobile });
+    if (res && res.status === 'success') {
+      if (res.exists && res.player) {
         try {
-          localStorage.setItem('derby_player_' + cleanMobile, JSON.stringify(remoteRecord));
+          localStorage.setItem('derby_player_' + cleanMobile, JSON.stringify(res.player));
         } catch(e){}
-        return remoteRecord;
+        return res.player;
       } else {
-        // Record does not exist in Supabase DB (or was deleted by admin)
-        // Clear any stale local storage cache for this number so it gets 3 fresh attempts!
+        // Record deleted or not found in Google Sheet -> Purge stale local cache!
         try {
           localStorage.removeItem('derby_player_' + cleanMobile);
         } catch(e){}
         return null;
       }
-    } catch (err) {
-      console.error('Supabase query error, fallback to local storage:', err);
     }
   }
 
-  // Fallback to local storage ONLY if offline or Supabase connection fails
+  // Fallback to local storage if URL not configured or offline
   try {
     const raw = localStorage.getItem('derby_player_' + cleanMobile);
     if (raw) return JSON.parse(raw);
@@ -2673,21 +2662,20 @@ async function savePlayerRecord(name, mobile) {
     localStorage.setItem('derby_player_' + cleanMobile, JSON.stringify(record));
   } catch(e){}
 
-  if (!supabase) return record;
-
-  try {
-    const { data, error } = await supabase
-      .from('game_registrations')
-      .insert([record])
-      .select();
-    if (error) {
-      await supabase.from('registrations').insert([record]);
-    }
-    return record;
-  } catch (err) {
-    console.error('Save player record error:', err);
-    return record;
+  if (GOOGLE_SHEET_SCRIPT_URL && GOOGLE_SHEET_SCRIPT_URL.trim()) {
+    await callGoogleSheetAPI({
+      action: 'save',
+      name: cleanName,
+      mobile: cleanMobile,
+      attempts_used: 0,
+      best_reward: '0% OFF',
+      completed: false,
+      progress: 0,
+      accuracy: 0
+    });
   }
+
+  return record;
 }
 
 async function updatePlayerResult(mobile, stats, isClaimed = false) {
@@ -2721,31 +2709,17 @@ async function updatePlayerResult(mobile, stats, isClaimed = false) {
     localStorage.setItem('derby_player_' + cleanMobile, JSON.stringify(localObj));
   } catch(e){}
 
-  const updateData = {
-    attempts_used: newAttempts,
-    best_reward: bestRewardStr,
-    reward: bestRewardStr,
-    completed: completed,
-    progress: stats.progress || 0,
-    accuracy: Math.round((stats.accuracy || 0) * 100),
-    completed_at: new Date().toISOString()
-  };
-
-  if (!supabase) return localObj;
-
-  try {
-    let { error } = await supabase
-      .from('game_registrations')
-      .update(updateData)
-      .eq('mobile', cleanMobile);
-    if (error) {
-      await supabase
-        .from('registrations')
-        .update(updateData)
-        .eq('mobile', cleanMobile);
-    }
-  } catch (err) {
-    console.error('Update player result error:', err);
+  if (GOOGLE_SHEET_SCRIPT_URL && GOOGLE_SHEET_SCRIPT_URL.trim()) {
+    await callGoogleSheetAPI({
+      action: 'update',
+      name: localObj.name,
+      mobile: cleanMobile,
+      attempts_used: newAttempts,
+      best_reward: bestRewardStr,
+      completed: completed,
+      progress: stats.progress || 0,
+      accuracy: Math.round((stats.accuracy || 0) * 100)
+    });
   }
 
   return localObj;
