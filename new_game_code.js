@@ -2607,15 +2607,15 @@ async function checkExistingPlayer(mobile) {
   if (!cleanMobile) return null;
 
   // Check local storage first
+  let localRecord = null;
   try {
     const raw = localStorage.getItem('derby_player_' + cleanMobile);
     if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && (parsed.completed || parsed.attempts_used >= 3)) return parsed;
+      localRecord = JSON.parse(raw);
     }
   } catch(e){}
 
-  if (!supabase) return null;
+  if (!supabase) return localRecord;
 
   try {
     const { data, error } = await supabase
@@ -2628,15 +2628,41 @@ async function checkExistingPlayer(mobile) {
         .from('registrations')
         .select('*')
         .eq('mobile', cleanMobile);
-      if (fallbackData && fallbackData.length > 0) return fallbackData[0];
-      return null;
+      if (fallbackData && fallbackData.length > 0) {
+        return mergePlayerRecord(localRecord, fallbackData[0]);
+      }
+      return localRecord;
     }
-    if (data && data.length > 0) return data[0];
-    return null;
+    if (data && data.length > 0) {
+      return mergePlayerRecord(localRecord, data[0]);
+    }
+    return localRecord;
   } catch (err) {
     console.error('Check player error:', err);
-    return null;
+    return localRecord;
   }
+}
+
+function mergePlayerRecord(local, remote) {
+  if (!local) return remote;
+  if (!remote) return local;
+  // Take whichever has higher attempts_used or is completed
+  const localAttempts = parseInt(local.attempts_used || 0) || 0;
+  const remoteAttempts = parseInt(remote.attempts_used || 0) || 0;
+  const maxAttempts = Math.max(localAttempts, remoteAttempts);
+  
+  const localBest = parseInt(local.best_reward || '0') || 0;
+  const remoteBest = parseInt(remote.best_reward || '0') || 0;
+  const maxBest = Math.max(localBest, remoteBest);
+
+  return {
+    ...remote,
+    name: remote.name || local.name,
+    mobile: remote.mobile || local.mobile,
+    attempts_used: maxAttempts,
+    best_reward: maxBest + '% OFF',
+    completed: local.completed || remote.completed || maxAttempts >= 3 || maxBest >= 15
+  };
 }
 
 async function savePlayerRecord(name, mobile) {
@@ -2679,7 +2705,7 @@ async function updatePlayerResult(mobile, stats, isClaimed = false) {
   const currentRewardNum = stats.reward || 0;
   let existing = await checkExistingPlayer(cleanMobile);
 
-  let attemptsUsed = existing ? (existing.attempts_used || 0) : 0;
+  let attemptsUsed = existing ? (parseInt(existing.attempts_used) || 0) : 0;
   let bestRewardNum = 0;
   if (existing && existing.best_reward) {
     const parsed = parseInt(existing.best_reward);
@@ -2691,6 +2717,18 @@ async function updatePlayerResult(mobile, stats, isClaimed = false) {
   const completed = isClaimed || newBestNum >= 15 || newAttempts >= 3;
   const bestRewardStr = newBestNum + '% OFF';
 
+  const localObj = {
+    name: (existing && existing.name) ? existing.name : '',
+    mobile: cleanMobile,
+    attempts_used: newAttempts,
+    best_reward: bestRewardStr,
+    completed: completed
+  };
+
+  try {
+    localStorage.setItem('derby_player_' + cleanMobile, JSON.stringify(localObj));
+  } catch(e){}
+
   const updateData = {
     attempts_used: newAttempts,
     best_reward: bestRewardStr,
@@ -2701,18 +2739,7 @@ async function updatePlayerResult(mobile, stats, isClaimed = false) {
     completed_at: new Date().toISOString()
   };
 
-  try {
-    const localObj = {
-      name: existing ? existing.name : '',
-      mobile: cleanMobile,
-      attempts_used: newAttempts,
-      best_reward: bestRewardStr,
-      completed: completed
-    };
-    localStorage.setItem('derby_player_' + cleanMobile, JSON.stringify(localObj));
-  } catch(e){}
-
-  if (!supabase) return updateData;
+  if (!supabase) return localObj;
 
   try {
     let { error } = await supabase
@@ -2729,7 +2756,7 @@ async function updatePlayerResult(mobile, stats, isClaimed = false) {
     console.error('Update player result error:', err);
   }
 
-  return updateData;
+  return localObj;
 }
 
 /* ========================= GAME CLASS ===================================== */
