@@ -287,6 +287,7 @@
     .card{padding:20px 16px 18px;}
   }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script type="importmap">
 {
   "imports": {
@@ -327,6 +328,37 @@
       }
       #pauseBtn:hover{background:rgba(45,16,68,.9);border-color:rgba(232,205,130,.75);}
       #pauseBtn:active{transform:scale(0.94);}
+
+      .form-group{text-align:left;margin-bottom:10px;width:100%;box-sizing:border-box;}
+      .form-group label{display:block;font-size:11px;font-weight:700;letter-spacing:0.05em;color:rgba(232,205,130,0.9);margin-bottom:4px;text-transform:uppercase;}
+      .form-control{width:100%;padding:9px 12px;border-radius:8px;border:1px solid rgba(232,205,130,0.35);background:rgba(18,7,28,0.75);color:#fff;font-family:inherit;font-size:13px;outline:none;box-sizing:border-box;transition:border-color 0.2s;}
+      .form-control:focus{border-color:#f0d089;box-shadow:0 0 0 2px rgba(240,208,137,0.25);}
+      .reg-error{color:#ff7b7b;font-size:12px;margin-top:4px;min-height:16px;text-align:center;font-weight:600;}
+      .venue-notice{
+        background:linear-gradient(135deg, rgba(232,205,130,0.18), rgba(214,168,104,0.1));
+        border:1px solid rgba(232,205,130,0.5);
+        border-radius:10px;
+        padding:10px 12px;
+        margin-top:12px;
+        color:#fffaed;
+        font-size:12px;
+        line-height:1.45;
+        text-align:center;
+        box-shadow:0 4px 14px rgba(0,0,0,0.2);
+      }
+      .venue-notice strong{color:#ffe89c;}
+      .badge-completed{
+        display:inline-block;
+        padding:5px 12px;
+        border-radius:20px;
+        background:rgba(232,205,130,0.18);
+        border:1px solid rgba(232,205,130,0.4);
+        color:#f6f1e6;
+        font-size:11px;
+        font-weight:700;
+        letter-spacing:0.05em;
+        margin-top:8px;
+      }
     </style>
 
     <div id="hud">
@@ -350,8 +382,34 @@
     <button id="cameraBtn" title="Switch Camera View (C)">📷 <span id="cameraModeLbl">CAM: SIDE</span></button>
     <button id="pauseBtn" title="Pause / Resume Game (P)">⏸</button>
 
+    <!-- REGISTRATION SCREEN (FIRST SCREEN) -->
+    <div class="overlay active" id="screenRegister">
+      <div class="card">
+        <div class="eyebrow">ROYAL CHAMPIONSHIP DERBY &bull; REGISTRATION</div>
+        <h1>Player Registration</h1>
+        <p style="margin-bottom:14px;">Enter your details to enter the Derby. <b>Note:</b> Each player (Email / Mobile) gets <b>1 single attempt</b>.</p>
+        
+        <form id="regForm" onsubmit="return false;" style="width:100%;">
+          <div class="form-group">
+            <label for="regName">Full Name</label>
+            <input type="text" id="regName" class="form-control" placeholder="Enter your full name" required>
+          </div>
+          <div class="form-group">
+            <label for="regMobile">Mobile Number</label>
+            <input type="tel" id="regMobile" class="form-control" placeholder="Enter 10-digit mobile number" required pattern="[0-9]{10}">
+          </div>
+          <div class="form-group">
+            <label for="regEmail">Email Address</label>
+            <input type="email" id="regEmail" class="form-control" placeholder="Enter your email ID" required>
+          </div>
+          <div class="reg-error" id="regError"></div>
+          <button type="submit" class="btn gold" id="btnRegister" style="margin-top:8px;">CONTINUE TO RACE</button>
+        </form>
+      </div>
+    </div>
+
     <!-- START SCREEN -->
-    <div class="overlay active" id="screenStart">
+    <div class="overlay" id="screenStart">
       <div class="card">
         <div class="eyebrow">ROYAL CHAMPIONSHIP DERBY &bull; TICKET DISCOUNT</div>
         <h1>Race for Discount</h1>
@@ -361,6 +419,33 @@
         <div class="small-note">
           Desktop: <span class="kbd">SPACE</span> or <span class="kbd">&#8593;</span> &nbsp;&bull;&nbsp; Mobile: tap JUMP
         </div>
+      </div>
+    </div>
+
+    <!-- ALREADY PLAYED / BLOCKED SCREEN -->
+    <div class="overlay" id="screenBlocked">
+      <div class="card">
+        <div class="eyebrow">ATTEMPT EXHAUSTED</div>
+        <h1>Already Played!</h1>
+        <p>Our records show that this mobile number or email address has already completed their ride. This derby is a <b>one-time entry</b> event.</p>
+        <div class="stat-row" style="margin-bottom:10px;">
+          <div class="stat-box" style="grid-column: span 3; text-align:center; padding:10px;">
+            <div class="label">REGISTERED PARTICIPANT</div>
+            <div class="value" id="blockedPlayerName" style="font-size:15px; margin-top:3px;">-</div>
+            <div style="font-size:11px; color:rgba(255,255,255,0.7); margin-top:2px;" id="blockedPlayerInfo"></div>
+          </div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-box" style="grid-column: span 3;">
+            <div class="label">EARNED DISCOUNT</div>
+            <div class="value" id="blockedReward" style="color:var(--gold-light,#f0d089);">0% OFF</div>
+          </div>
+        </div>
+        <div class="venue-notice">
+          📸 <strong>REDEMPTION NOTICE:</strong><br>
+          Take a screenshot of this discount screen and show it at the venue ticket counter to redeem your discount!
+        </div>
+        <div class="badge-completed">✅ ONE-TIME ATTEMPT COMPLETED</div>
       </div>
     </div>
 
@@ -391,7 +476,11 @@
           <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="overAccuracy">0%</div></div>
           <div class="stat-box"><div class="label">REWARD</div><div class="value" id="overReward">0% OFF</div></div>
         </div>
-        <button class="btn" id="btnRetry">TRY AGAIN</button>
+        <div class="venue-notice">
+          📸 <strong>IMPORTANT NOTE FOR REDEMPTION:</strong><br>
+          Take a screenshot of this screen now and show this at the venue for discount redemption!
+        </div>
+        <div class="badge-completed">✅ ONE-TIME RIDE COMPLETED</div>
       </div>
     </div>
 
@@ -406,7 +495,11 @@
           <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="timeAccuracy">0%</div></div>
           <div class="stat-box"><div class="label">REWARD</div><div class="value" id="timeReward">0% OFF</div></div>
         </div>
-        <button class="btn" id="btnTimeoutRetry">TRY AGAIN</button>
+        <div class="venue-notice">
+          📸 <strong>IMPORTANT NOTE FOR REDEMPTION:</strong><br>
+          Take a screenshot of this screen now and show this at the venue for discount redemption!
+        </div>
+        <div class="badge-completed">✅ ONE-TIME RIDE COMPLETED</div>
       </div>
     </div>
 
@@ -415,13 +508,17 @@
       <div class="card">
         <div class="eyebrow">COURSE COMPLETE</div>
         <h1>Championship Round!</h1>
-        <p>Exceptional ride! Show your final discount result at the ticket counter.</p>
+        <p>Exceptional ride! Here is your official discount result.</p>
         <div class="stat-row">
           <div class="stat-box"><div class="label">TIME</div><div class="value" id="victoryTime">00:00</div></div>
           <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="victoryAccuracy">0%</div></div>
           <div class="stat-box"><div class="label">REWARD</div><div class="value" id="victoryReward">0% OFF</div></div>
         </div>
-        <button class="btn gold" id="btnVictoryRestart">RIDE AGAIN</button>
+        <div class="venue-notice">
+          📸 <strong>IMPORTANT NOTE FOR REDEMPTION:</strong><br>
+          Take a screenshot of this screen now and show this at the venue for discount redemption!
+        </div>
+        <div class="badge-completed">🏆 CHAMPIONSHIP COMPLETED</div>
       </div>
     </div>
   </div>
@@ -3021,10 +3118,111 @@ class ThreeEnv {
 }
 
 
+/* ----------------------------- SUPABASE INTEGRATION ----------------------- */
+const SUPABASE_URL = 'https://jqnsukjknzurrltosxxc.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxbnN1a2prbnp1cnJsdG9zeHhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4MDM5MDYsImV4cCI6MjEwMjM3OTkwNn0.Wh1K6OBnUjtSy1spirHotpELOy2zZjEPDtUgyCEL5R0';
+
+let supabase = null;
+if (typeof window !== 'undefined' && window.supabase && window.supabase.createClient) {
+  try {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  } catch (e) { console.error('Supabase init error:', e); }
+}
+
+async function checkExistingPlayer(email, mobile) {
+  if (!supabase) return null;
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanMobile = (mobile || '').trim();
+  if (!cleanEmail && !cleanMobile) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from('game_registrations')
+      .select('*')
+      .or(`email.eq.${cleanEmail},mobile.eq.${cleanMobile}`);
+
+    if (error) {
+      const { data: fallbackData } = await supabase
+        .from('registrations')
+        .select('*')
+        .or(`email.eq.${cleanEmail},mobile.eq.${cleanMobile}`);
+      if (fallbackData && fallbackData.length > 0) return fallbackData[0];
+      return null;
+    }
+    if (data && data.length > 0) return data[0];
+    return null;
+  } catch (err) {
+    console.error('Check player error:', err);
+    return null;
+  }
+}
+
+async function savePlayerRecord(name, mobile, email) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanMobile = (mobile || '').trim();
+  const cleanName = (name || '').trim();
+  const record = {
+    name: cleanName,
+    mobile: cleanMobile,
+    email: cleanEmail,
+    reward: 'Pending',
+    progress: 0,
+    created_at: new Date().toISOString()
+  };
+
+  if (!supabase) return record;
+
+  try {
+    const { data, error } = await supabase
+      .from('game_registrations')
+      .insert([record])
+      .select();
+    if (error) {
+      await supabase.from('registrations').insert([record]);
+    }
+    return record;
+  } catch (err) {
+    console.error('Save player record error:', err);
+    return record;
+  }
+}
+
+async function updatePlayerResult(email, mobile, stats) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanMobile = (mobile || '').trim();
+  if (!cleanEmail && !cleanMobile) return;
+
+  const rewardStr = (stats.reward !== undefined) ? (stats.reward + '% OFF') : '0% OFF';
+  const updateData = {
+    reward: rewardStr,
+    progress: stats.progress || 0,
+    accuracy: Math.round((stats.accuracy || 0) * 100),
+    completed_at: new Date().toISOString()
+  };
+
+  if (!supabase) return;
+
+  try {
+    let { error } = await supabase
+      .from('game_registrations')
+      .update(updateData)
+      .or(`email.eq.${cleanEmail},mobile.eq.${cleanMobile}`);
+    if (error) {
+      await supabase
+        .from('registrations')
+        .update(updateData)
+        .or(`email.eq.${cleanEmail},mobile.eq.${cleanMobile}`);
+    }
+  } catch (err) {
+    console.error('Update player result error:', err);
+  }
+}
+
 /* ========================= GAME CLASS ===================================== */
 class Game {
   constructor(env) {
     this.env = env;
+    this.player = null;
     this.state = STATE.START;
     this.animState = ANIM.IDLE;
 
@@ -3190,6 +3388,16 @@ class Game {
     };
   }
 
+  _handleRunFinished(stats) {
+    if (this.player && (this.player.email || this.player.mobile)) {
+      updatePlayerResult(this.player.email, this.player.mobile, stats);
+      try {
+        if (this.player.email) localStorage.setItem('derby_completed_' + this.player.email.toLowerCase(), 'true');
+        if (this.player.mobile) localStorage.setItem('derby_completed_' + this.player.mobile, 'true');
+      } catch(e){}
+    }
+  }
+
   gameOver() {
     this.state = STATE.GAME_OVER;
     this.animState = ANIM.HIT;
@@ -3201,6 +3409,7 @@ class Game {
     const reward = calculateReward(this.progress, this.elapsedTime, this.remainingTime, stats);
     stats.reward = reward;
     this.lastResultData = stats;
+    this._handleRunFinished(stats);
     console.log('🏁 GAME OVER RESULT:', stats);
 
     document.getElementById('overProgress').textContent = stats.progress + '%';
@@ -3227,6 +3436,7 @@ class Game {
     const reward = calculateReward(this.progress, this.elapsedTime, 0, stats);
     stats.reward = reward;
     this.lastResultData = stats;
+    this._handleRunFinished(stats);
     console.log('🏁 TIMEOUT RESULT:', stats);
 
     document.getElementById('timeProgress').textContent = stats.progress + '%';
@@ -3247,6 +3457,7 @@ class Game {
     const reward = calculateReward(100, this.elapsedTime, this.remainingTime, stats);
     stats.reward = reward;
     this.lastResultData = stats;
+    this._handleRunFinished(stats);
     console.log('🏁 VICTORY RESULT:', stats);
 
     document.getElementById('victoryTime').textContent = stats.elapsedTime + 's';
@@ -3553,11 +3764,62 @@ function showScreen(id) {
   const env  = new ThreeEnv();
   const game = new Game(env);
 
-  document.getElementById('btnStart').addEventListener('click', () => game.start());
-  document.getElementById('btnRetry').addEventListener('click', () => game.start());
-  document.getElementById('btnVictoryRestart').addEventListener('click', () => game.start());
-  const btnTimeout = document.getElementById('btnTimeoutRetry');
-  if (btnTimeout) btnTimeout.addEventListener('click', () => game.start());
+  const regForm = document.getElementById('regForm');
+  const regError = document.getElementById('regError');
+  const btnRegister = document.getElementById('btnRegister');
+
+  if (regForm) {
+    regForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('regName').value.trim();
+      const mobile = document.getElementById('regMobile').value.trim();
+      const email = document.getElementById('regEmail').value.trim();
+
+      if (!name || !mobile || !email) {
+        if (regError) regError.textContent = 'Please fill out all registration fields.';
+        return;
+      }
+      if (!/^\d{10}$/.test(mobile)) {
+        if (regError) regError.textContent = 'Please enter a valid 10-digit mobile number.';
+        return;
+      }
+
+      if (regError) regError.textContent = '';
+      if (btnRegister) {
+        btnRegister.disabled = true;
+        btnRegister.textContent = 'VERIFYING...';
+      }
+
+      const localPlayed = (email && localStorage.getItem('derby_completed_' + email.toLowerCase())) ||
+                          (mobile && localStorage.getItem('derby_completed_' + mobile));
+      const existing = await checkExistingPlayer(email, mobile);
+
+      if (btnRegister) {
+        btnRegister.disabled = false;
+        btnRegister.textContent = 'CONTINUE TO RACE';
+      }
+
+      if (localPlayed || existing) {
+        const prevReward = existing ? (existing.reward || '0% OFF') : '0% OFF';
+        const prevName = existing ? (existing.name || name) : name;
+        const pName = document.getElementById('blockedPlayerName');
+        const pInfo = document.getElementById('blockedPlayerInfo');
+        const pRew = document.getElementById('blockedReward');
+        if (pName) pName.textContent = prevName;
+        if (pInfo) pInfo.textContent = `${mobile} • ${email}`;
+        if (pRew) pRew.textContent = prevReward;
+        showScreen('screenBlocked');
+        return;
+      }
+
+      const playerRecord = await savePlayerRecord(name, mobile, email);
+      game.player = playerRecord;
+      showScreen('screenStart');
+    });
+  }
+
+  const btnStart = document.getElementById('btnStart');
+  if (btnStart) btnStart.addEventListener('click', () => game.start());
 
   document.getElementById('startHint').style.display = 'none';
 

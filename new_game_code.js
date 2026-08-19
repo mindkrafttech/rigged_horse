@@ -2591,10 +2591,111 @@ class ThreeEnv {
 }
 
 
+/* ----------------------------- SUPABASE INTEGRATION ----------------------- */
+const SUPABASE_URL = 'https://jqnsukjknzurrltosxxc.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxbnN1a2prbnp1cnJsdG9zeHhjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4MDM5MDYsImV4cCI6MjEwMjM3OTkwNn0.Wh1K6OBnUjtSy1spirHotpELOy2zZjEPDtUgyCEL5R0';
+
+let supabase = null;
+if (typeof window !== 'undefined' && window.supabase && window.supabase.createClient) {
+  try {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  } catch (e) { console.error('Supabase init error:', e); }
+}
+
+async function checkExistingPlayer(email, mobile) {
+  if (!supabase) return null;
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanMobile = (mobile || '').trim();
+  if (!cleanEmail && !cleanMobile) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from('game_registrations')
+      .select('*')
+      .or(`email.eq.${cleanEmail},mobile.eq.${cleanMobile}`);
+
+    if (error) {
+      const { data: fallbackData } = await supabase
+        .from('registrations')
+        .select('*')
+        .or(`email.eq.${cleanEmail},mobile.eq.${cleanMobile}`);
+      if (fallbackData && fallbackData.length > 0) return fallbackData[0];
+      return null;
+    }
+    if (data && data.length > 0) return data[0];
+    return null;
+  } catch (err) {
+    console.error('Check player error:', err);
+    return null;
+  }
+}
+
+async function savePlayerRecord(name, mobile, email) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanMobile = (mobile || '').trim();
+  const cleanName = (name || '').trim();
+  const record = {
+    name: cleanName,
+    mobile: cleanMobile,
+    email: cleanEmail,
+    reward: 'Pending',
+    progress: 0,
+    created_at: new Date().toISOString()
+  };
+
+  if (!supabase) return record;
+
+  try {
+    const { data, error } = await supabase
+      .from('game_registrations')
+      .insert([record])
+      .select();
+    if (error) {
+      await supabase.from('registrations').insert([record]);
+    }
+    return record;
+  } catch (err) {
+    console.error('Save player record error:', err);
+    return record;
+  }
+}
+
+async function updatePlayerResult(email, mobile, stats) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanMobile = (mobile || '').trim();
+  if (!cleanEmail && !cleanMobile) return;
+
+  const rewardStr = (stats.reward !== undefined) ? (stats.reward + '% OFF') : '0% OFF';
+  const updateData = {
+    reward: rewardStr,
+    progress: stats.progress || 0,
+    accuracy: Math.round((stats.accuracy || 0) * 100),
+    completed_at: new Date().toISOString()
+  };
+
+  if (!supabase) return;
+
+  try {
+    let { error } = await supabase
+      .from('game_registrations')
+      .update(updateData)
+      .or(`email.eq.${cleanEmail},mobile.eq.${cleanMobile}`);
+    if (error) {
+      await supabase
+        .from('registrations')
+        .update(updateData)
+        .or(`email.eq.${cleanEmail},mobile.eq.${cleanMobile}`);
+    }
+  } catch (err) {
+    console.error('Update player result error:', err);
+  }
+}
+
 /* ========================= GAME CLASS ===================================== */
 class Game {
   constructor(env) {
     this.env = env;
+    this.player = null;
     this.state = STATE.START;
     this.animState = ANIM.IDLE;
 
@@ -2760,6 +2861,16 @@ class Game {
     };
   }
 
+  _handleRunFinished(stats) {
+    if (this.player && (this.player.email || this.player.mobile)) {
+      updatePlayerResult(this.player.email, this.player.mobile, stats);
+      try {
+        if (this.player.email) localStorage.setItem('derby_completed_' + this.player.email.toLowerCase(), 'true');
+        if (this.player.mobile) localStorage.setItem('derby_completed_' + this.player.mobile, 'true');
+      } catch(e){}
+    }
+  }
+
   gameOver() {
     this.state = STATE.GAME_OVER;
     this.animState = ANIM.HIT;
@@ -2771,6 +2882,7 @@ class Game {
     const reward = calculateReward(this.progress, this.elapsedTime, this.remainingTime, stats);
     stats.reward = reward;
     this.lastResultData = stats;
+    this._handleRunFinished(stats);
     console.log('🏁 GAME OVER RESULT:', stats);
 
     document.getElementById('overProgress').textContent = stats.progress + '%';
@@ -2797,6 +2909,7 @@ class Game {
     const reward = calculateReward(this.progress, this.elapsedTime, 0, stats);
     stats.reward = reward;
     this.lastResultData = stats;
+    this._handleRunFinished(stats);
     console.log('🏁 TIMEOUT RESULT:', stats);
 
     document.getElementById('timeProgress').textContent = stats.progress + '%';
@@ -2817,6 +2930,7 @@ class Game {
     const reward = calculateReward(100, this.elapsedTime, this.remainingTime, stats);
     stats.reward = reward;
     this.lastResultData = stats;
+    this._handleRunFinished(stats);
     console.log('🏁 VICTORY RESULT:', stats);
 
     document.getElementById('victoryTime').textContent = stats.elapsedTime + 's';
@@ -3123,11 +3237,62 @@ function showScreen(id) {
   const env  = new ThreeEnv();
   const game = new Game(env);
 
-  document.getElementById('btnStart').addEventListener('click', () => game.start());
-  document.getElementById('btnRetry').addEventListener('click', () => game.start());
-  document.getElementById('btnVictoryRestart').addEventListener('click', () => game.start());
-  const btnTimeout = document.getElementById('btnTimeoutRetry');
-  if (btnTimeout) btnTimeout.addEventListener('click', () => game.start());
+  const regForm = document.getElementById('regForm');
+  const regError = document.getElementById('regError');
+  const btnRegister = document.getElementById('btnRegister');
+
+  if (regForm) {
+    regForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('regName').value.trim();
+      const mobile = document.getElementById('regMobile').value.trim();
+      const email = document.getElementById('regEmail').value.trim();
+
+      if (!name || !mobile || !email) {
+        if (regError) regError.textContent = 'Please fill out all registration fields.';
+        return;
+      }
+      if (!/^\d{10}$/.test(mobile)) {
+        if (regError) regError.textContent = 'Please enter a valid 10-digit mobile number.';
+        return;
+      }
+
+      if (regError) regError.textContent = '';
+      if (btnRegister) {
+        btnRegister.disabled = true;
+        btnRegister.textContent = 'VERIFYING...';
+      }
+
+      const localPlayed = (email && localStorage.getItem('derby_completed_' + email.toLowerCase())) ||
+                          (mobile && localStorage.getItem('derby_completed_' + mobile));
+      const existing = await checkExistingPlayer(email, mobile);
+
+      if (btnRegister) {
+        btnRegister.disabled = false;
+        btnRegister.textContent = 'CONTINUE TO RACE';
+      }
+
+      if (localPlayed || existing) {
+        const prevReward = existing ? (existing.reward || '0% OFF') : '0% OFF';
+        const prevName = existing ? (existing.name || name) : name;
+        const pName = document.getElementById('blockedPlayerName');
+        const pInfo = document.getElementById('blockedPlayerInfo');
+        const pRew = document.getElementById('blockedReward');
+        if (pName) pName.textContent = prevName;
+        if (pInfo) pInfo.textContent = `${mobile} • ${email}`;
+        if (pRew) pRew.textContent = prevReward;
+        showScreen('screenBlocked');
+        return;
+      }
+
+      const playerRecord = await savePlayerRecord(name, mobile, email);
+      game.player = playerRecord;
+      showScreen('screenStart');
+    });
+  }
+
+  const btnStart = document.getElementById('btnStart');
+  if (btnStart) btnStart.addEventListener('click', () => game.start());
 
   document.getElementById('startHint').style.display = 'none';
 

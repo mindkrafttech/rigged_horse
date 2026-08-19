@@ -1,3 +1,4 @@
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script type="importmap">
 {
   "imports": {
@@ -38,6 +39,37 @@
       }
       #pauseBtn:hover{background:rgba(45,16,68,.9);border-color:rgba(232,205,130,.75);}
       #pauseBtn:active{transform:scale(0.94);}
+
+      .form-group{text-align:left;margin-bottom:10px;width:100%;box-sizing:border-box;}
+      .form-group label{display:block;font-size:11px;font-weight:700;letter-spacing:0.05em;color:rgba(232,205,130,0.9);margin-bottom:4px;text-transform:uppercase;}
+      .form-control{width:100%;padding:9px 12px;border-radius:8px;border:1px solid rgba(232,205,130,0.35);background:rgba(18,7,28,0.75);color:#fff;font-family:inherit;font-size:13px;outline:none;box-sizing:border-box;transition:border-color 0.2s;}
+      .form-control:focus{border-color:#f0d089;box-shadow:0 0 0 2px rgba(240,208,137,0.25);}
+      .reg-error{color:#ff7b7b;font-size:12px;margin-top:4px;min-height:16px;text-align:center;font-weight:600;}
+      .venue-notice{
+        background:linear-gradient(135deg, rgba(232,205,130,0.18), rgba(214,168,104,0.1));
+        border:1px solid rgba(232,205,130,0.5);
+        border-radius:10px;
+        padding:10px 12px;
+        margin-top:12px;
+        color:#fffaed;
+        font-size:12px;
+        line-height:1.45;
+        text-align:center;
+        box-shadow:0 4px 14px rgba(0,0,0,0.2);
+      }
+      .venue-notice strong{color:#ffe89c;}
+      .badge-completed{
+        display:inline-block;
+        padding:5px 12px;
+        border-radius:20px;
+        background:rgba(232,205,130,0.18);
+        border:1px solid rgba(232,205,130,0.4);
+        color:#f6f1e6;
+        font-size:11px;
+        font-weight:700;
+        letter-spacing:0.05em;
+        margin-top:8px;
+      }
     </style>
 
     <div id="hud">
@@ -61,8 +93,34 @@
     <button id="cameraBtn" title="Switch Camera View (C)">📷 <span id="cameraModeLbl">CAM: SIDE</span></button>
     <button id="pauseBtn" title="Pause / Resume Game (P)">⏸</button>
 
+    <!-- REGISTRATION SCREEN (FIRST SCREEN) -->
+    <div class="overlay active" id="screenRegister">
+      <div class="card">
+        <div class="eyebrow">ROYAL CHAMPIONSHIP DERBY &bull; REGISTRATION</div>
+        <h1>Player Registration</h1>
+        <p style="margin-bottom:14px;">Enter your details to enter the Derby. <b>Note:</b> Each player (Email / Mobile) gets <b>1 single attempt</b>.</p>
+        
+        <form id="regForm" onsubmit="return false;" style="width:100%;">
+          <div class="form-group">
+            <label for="regName">Full Name</label>
+            <input type="text" id="regName" class="form-control" placeholder="Enter your full name" required>
+          </div>
+          <div class="form-group">
+            <label for="regMobile">Mobile Number</label>
+            <input type="tel" id="regMobile" class="form-control" placeholder="Enter 10-digit mobile number" required pattern="[0-9]{10}">
+          </div>
+          <div class="form-group">
+            <label for="regEmail">Email Address</label>
+            <input type="email" id="regEmail" class="form-control" placeholder="Enter your email ID" required>
+          </div>
+          <div class="reg-error" id="regError"></div>
+          <button type="submit" class="btn gold" id="btnRegister" style="margin-top:8px;">CONTINUE TO RACE</button>
+        </form>
+      </div>
+    </div>
+
     <!-- START SCREEN -->
-    <div class="overlay active" id="screenStart">
+    <div class="overlay" id="screenStart">
       <div class="card">
         <div class="eyebrow">ROYAL CHAMPIONSHIP DERBY &bull; TICKET DISCOUNT</div>
         <h1>Race for Discount</h1>
@@ -72,6 +130,33 @@
         <div class="small-note">
           Desktop: <span class="kbd">SPACE</span> or <span class="kbd">&#8593;</span> &nbsp;&bull;&nbsp; Mobile: tap JUMP
         </div>
+      </div>
+    </div>
+
+    <!-- ALREADY PLAYED / BLOCKED SCREEN -->
+    <div class="overlay" id="screenBlocked">
+      <div class="card">
+        <div class="eyebrow">ATTEMPT EXHAUSTED</div>
+        <h1>Already Played!</h1>
+        <p>Our records show that this mobile number or email address has already completed their ride. This derby is a <b>one-time entry</b> event.</p>
+        <div class="stat-row" style="margin-bottom:10px;">
+          <div class="stat-box" style="grid-column: span 3; text-align:center; padding:10px;">
+            <div class="label">REGISTERED PARTICIPANT</div>
+            <div class="value" id="blockedPlayerName" style="font-size:15px; margin-top:3px;">-</div>
+            <div style="font-size:11px; color:rgba(255,255,255,0.7); margin-top:2px;" id="blockedPlayerInfo"></div>
+          </div>
+        </div>
+        <div class="stat-row">
+          <div class="stat-box" style="grid-column: span 3;">
+            <div class="label">EARNED DISCOUNT</div>
+            <div class="value" id="blockedReward" style="color:var(--gold-light,#f0d089);">0% OFF</div>
+          </div>
+        </div>
+        <div class="venue-notice">
+          📸 <strong>REDEMPTION NOTICE:</strong><br>
+          Take a screenshot of this discount screen and show it at the venue ticket counter to redeem your discount!
+        </div>
+        <div class="badge-completed">✅ ONE-TIME ATTEMPT COMPLETED</div>
       </div>
     </div>
 
@@ -102,7 +187,11 @@
           <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="overAccuracy">0%</div></div>
           <div class="stat-box"><div class="label">REWARD</div><div class="value" id="overReward">0% OFF</div></div>
         </div>
-        <button class="btn" id="btnRetry">TRY AGAIN</button>
+        <div class="venue-notice">
+          📸 <strong>IMPORTANT NOTE FOR REDEMPTION:</strong><br>
+          Take a screenshot of this screen now and show this at the venue for discount redemption!
+        </div>
+        <div class="badge-completed">✅ ONE-TIME RIDE COMPLETED</div>
       </div>
     </div>
 
@@ -117,7 +206,11 @@
           <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="timeAccuracy">0%</div></div>
           <div class="stat-box"><div class="label">REWARD</div><div class="value" id="timeReward">0% OFF</div></div>
         </div>
-        <button class="btn" id="btnTimeoutRetry">TRY AGAIN</button>
+        <div class="venue-notice">
+          📸 <strong>IMPORTANT NOTE FOR REDEMPTION:</strong><br>
+          Take a screenshot of this screen now and show this at the venue for discount redemption!
+        </div>
+        <div class="badge-completed">✅ ONE-TIME RIDE COMPLETED</div>
       </div>
     </div>
 
@@ -126,13 +219,17 @@
       <div class="card">
         <div class="eyebrow">COURSE COMPLETE</div>
         <h1>Championship Round!</h1>
-        <p>Exceptional ride! Show your final discount result at the ticket counter.</p>
+        <p>Exceptional ride! Here is your official discount result.</p>
         <div class="stat-row">
           <div class="stat-box"><div class="label">TIME</div><div class="value" id="victoryTime">00:00</div></div>
           <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="victoryAccuracy">0%</div></div>
           <div class="stat-box"><div class="label">REWARD</div><div class="value" id="victoryReward">0% OFF</div></div>
         </div>
-        <button class="btn gold" id="btnVictoryRestart">RIDE AGAIN</button>
+        <div class="venue-notice">
+          📸 <strong>IMPORTANT NOTE FOR REDEMPTION:</strong><br>
+          Take a screenshot of this screen now and show this at the venue for discount redemption!
+        </div>
+        <div class="badge-completed">🏆 CHAMPIONSHIP COMPLETED</div>
       </div>
     </div>
   </div>
