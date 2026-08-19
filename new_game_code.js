@@ -28,7 +28,7 @@ const DERBY_CONFIG = {
 
 const REWARD_CONFIG = {
   minimum: 0,                   // Minimum discount (0% if 1st hurdle missed)
-  maximum: 15,                  // MAXIMUM DISCOUNT CAP IS NOW 15% OFF!
+  maximum: 20,                  // MAXIMUM DISCOUNT CAP IS NOW 20% OFF!
   discountPerHurdle: 1,         // 1% discount for each hurdle successfully cleared!
   firstHurdleRequired: true,    // Failing 1st hurdle = 0% reward!
 };
@@ -55,18 +55,20 @@ const GC = {
     hurdleHalfX: 0.45, // hurdle collision half-width in X
   },
   progression: {
-    hurdlesToWin: 15,   // 15 cleared hurdles = 100% course progress = the 15% cap
-    totalHurdles: 25, // 25 hurdles total on course (clearing 15 ends game with 15% MAX discount!)
+    hurdlesToWin: 20,   // 20 cleared hurdles = 100% course progress = 20% MAX discount
+    totalHurdles: 20,   // 20 hurdles total on course
     hardModeUnlock: 50,
     completion: 100,
   },
   difficulty: [
-    { minPct: 0,   speed: 23.5, gapMs: [800,  1350], railH: 1.48 }, // BLAZING FAST starting speed & tall 1st hurdle!
-    { minPct: 10,  speed: 25.0, gapMs: [750,  1250], railH: 1.52 },
-    { minPct: 25,  speed: 27.0, gapMs: [700,  1100], railH: 1.55 },
-    { minPct: 50,  speed: 29.5, gapMs: [620,   950], railH: 1.60 }, // HARD MODE SPIKE
-    { minPct: 75,  speed: 31.5, gapMs: [550,   850], railH: 1.65 },
-    { minPct: 90,  speed: 33.5, gapMs: [480,   750], railH: 1.70 },
+    // Hurdles 1–5 (Progress 0–25%): 🟢 EASY MODE
+    { minPct: 0,   speed: 18.5, gapMs: [2100, 2400], railH: 1.45, name: '🟢 EASY MODE', color: '#4CAF50' },
+    // Hurdles 6–10 (Progress 26–50%): 🟡 NORMAL MODE
+    { minPct: 26,  speed: 21.5, gapMs: [1750, 2000], railH: 1.50, name: '🟡 NORMAL MODE', color: '#e8a838' },
+    // Hurdles 11–15 (Progress 51–75%): 🟠 HARD MODE
+    { minPct: 51,  speed: 25.0, gapMs: [1400, 1650], railH: 1.55, name: '🟠 HARD MODE', color: '#ff9933' },
+    // Hurdles 16–20 (Progress 76–100%): 🔴 EXPERT MODE
+    { minPct: 76,  speed: 28.5, gapMs: [1100, 1300], railH: 1.60, name: '🔴 EXPERT MODE', color: '#ff4d4d' },
   ],
 };
 
@@ -250,20 +252,61 @@ function calculateReward(progress, elapsedTime = 0, remainingTime = 40, stats = 
   // RULE: missing the very first hurdle = no discount at all.
   if (REWARD_CONFIG.firstHurdleRequired && !firstPassed) return 0;
 
-  // 1% per hurdle actually cleared. A clean 15-hurdle course = the full 15%.
+  // 1% per hurdle actually cleared. A clean 20-hurdle course = the full 20%.
   let reward = cleared * REWARD_CONFIG.discountPerHurdle;
 
-  // Accuracy gate: 15% has to be earned, completion alone is not enough.
+  // Accuracy gate
   const attempted = (stats && stats.hurdlesAttempted) ? stats.hurdlesAttempted : cleared;
   if (attempted > 0) {
     const acc = cleared / attempted;
     if (acc < 1) reward *= (0.55 + 0.45 * acc);
   }
 
-  // FINAL SAFETY CLAMP — no code path can ever display more than 15%.
   reward = Math.round(reward);
-  reward = Math.max(REWARD_CONFIG.minimum, Math.min(REWARD_CONFIG.maximum, reward));
-  return Math.max(0, Math.min(15, reward));
+  return Math.max(REWARD_CONFIG.minimum, Math.min(REWARD_CONFIG.maximum, reward));
+}
+
+function generateCouponCode(discountPct, mobile) {
+  const cleanMob = (mobile || '').toString().slice(-4) || '2026';
+  const seed = (cleanMob + '_' + discountPct).split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let hash = '';
+  let n = seed * 9301 + 49297;
+  for (let i = 0; i < 4; i++) {
+    n = (n * 9301 + 49297) % 233280;
+    hash += chars[Math.floor((n / 233280) * chars.length)];
+  }
+  return `DERBY${discountPct}-${hash}`;
+}
+
+function copyCouponCode(elementId, btnEl) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  const text = el.textContent || el.innerText;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => showCopied(btnEl));
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showCopied(btnEl);
+  }
+}
+
+function showCopied(btnEl) {
+  if (!btnEl) return;
+  const orig = btnEl.textContent;
+  btnEl.textContent = '✅ COPIED!';
+  btnEl.style.background = '#4CAF50';
+  btnEl.style.color = '#ffffff';
+  setTimeout(() => {
+    btnEl.textContent = orig;
+    btnEl.style.background = '';
+    btnEl.style.color = '';
+  }, 1800);
 }
 
 function getDifficulty(pct) {
@@ -2982,15 +3025,20 @@ class Game {
     Sound.stopMusic();
 
     const stats = this.getStats();
-    const reward = 15;
+    const reward = 20;
     stats.reward = reward;
     this.lastResultData = stats;
 
     await updatePlayerResult(this.player ? this.player.mobile : '', stats, true);
 
+    const mob = (this.player && this.player.mobile) ? this.player.mobile : '';
+    const code = generateCouponCode(20, mob);
+    const vicCodeEl = document.getElementById('victoryCouponVal');
+    if (vicCodeEl) vicCodeEl.textContent = code;
+
     document.getElementById('victoryTime').textContent = stats.elapsedTime + 's';
     document.getElementById('victoryAccuracy').textContent = Math.round(stats.accuracy * 100) + '%';
-    document.getElementById('victoryReward').textContent = '15% OFF';
+    document.getElementById('victoryReward').textContent = '20% OFF';
 
     setTimeout(() => showScreen('screenVictory'), 350);
   }
@@ -2998,20 +3046,26 @@ class Game {
   renderResultCardUI(prefix, currentReward, resData) {
     const attempts = resData ? resData.attempts_used : 1;
     const bestRewardStr = resData ? resData.best_reward : (currentReward + '% OFF');
+    const bestNum = parseInt(bestRewardStr) || currentReward;
     const isCompleted = resData ? resData.completed : false;
+
+    const mob = (this.player && this.player.mobile) ? this.player.mobile : '';
+    const code = generateCouponCode(bestNum, mob);
+    const codeEl = document.getElementById(prefix + 'CouponVal');
+    if (codeEl) codeEl.textContent = code;
 
     const infoEl = document.getElementById(prefix + 'AttemptInfo');
     const actionsEl = document.getElementById(prefix + 'ActionsWrap');
     const noticeEl = document.getElementById(prefix + 'Notice');
     const badgeEl = document.getElementById(prefix + 'Badge');
 
-    if (currentReward >= 15 || isCompleted || attempts >= 3) {
+    if (currentReward >= 20 || isCompleted || attempts >= 3) {
       if (infoEl) infoEl.textContent = `All 3 Attempts Completed • Best Discount: ${bestRewardStr}`;
       if (actionsEl) actionsEl.style.display = 'none';
       if (noticeEl) noticeEl.style.display = 'block';
       if (badgeEl) {
         badgeEl.style.display = 'inline-block';
-        badgeEl.textContent = (currentReward >= 15) ? '🏆 15% MAX REWARD UNLOCKED' : '✅ ALL ATTEMPTS COMPLETED';
+        badgeEl.textContent = (currentReward >= 20) ? '🏆 20% MAX REWARD UNLOCKED' : '✅ ALL ATTEMPTS COMPLETED';
       }
     } else {
       const remaining = 3 - attempts;
@@ -3029,6 +3083,11 @@ class Game {
     if (this.player && this.player.mobile) {
       await updatePlayerResult(this.player.mobile, stats, true);
     }
+    const bestNum = stats.reward || 0;
+    const code = generateCouponCode(bestNum, this.player ? this.player.mobile : '');
+    const codeEl = document.getElementById(prefix + 'CouponVal');
+    if (codeEl) codeEl.textContent = code;
+
     const actionsEl = document.getElementById(prefix + 'ActionsWrap');
     const noticeEl = document.getElementById(prefix + 'Notice');
     const badgeEl = document.getElementById(prefix + 'Badge');
@@ -3041,15 +3100,16 @@ class Game {
   }
 
   setProgress(val) {
-    const wasHard = this.hardMode;
+    const prevDiff = this.getDiff();
     this.progress = Math.min(100, Math.max(0, val));
-    if (!wasHard && this.progress >= GC.progression.hardModeUnlock) {
-      this.hardMode = true;
-      if (this.env.onHardMode) this.env.onHardMode();
-      setModeUI(true);
-      Sound.hardMode();
-      flashHardModeBanner();
+    const currentDiff = this.getDiff();
+
+    if (currentDiff && currentDiff.name !== (prevDiff ? prevDiff.name : '')) {
+      const modePill = document.getElementById('modePill');
+      if (modePill) modePill.innerHTML = `MODE: <b>${currentDiff.name.replace(/^[^\s]+\s+/, '')}</b>`;
+      flashHardModeBanner(currentDiff.name, currentDiff.color);
     }
+
     if (this.progress >= GC.progression.completion) {
       this.victory();
     }
@@ -3300,16 +3360,14 @@ function updateHUD(game) {
   }
 }
 
-function setModeUI(hard) {
-  const pill = document.getElementById('modePill');
-  pill.classList.toggle('hard', hard);
-  pill.innerHTML = `MODE: <b>${hard ? 'HARD' : 'NORMAL'}</b>`;
-}
-
-function flashHardModeBanner() {
+function flashHardModeBanner(text = 'LEVEL UP!', color = '#ffe89c') {
   const el = document.getElementById('hardModeBanner');
+  if (!el) return;
+  el.textContent = text;
+  if (color) el.style.borderColor = color;
   el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 1400);
+  if (el._timer) clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove('show'), 1600);
 }
 
 function spawnFloatingText(text) {
@@ -3372,12 +3430,17 @@ function showScreen(id) {
       if (existing && (existing.completed || (existing.attempts_used >= 3))) {
         const prevReward = existing.best_reward || existing.reward || '0% OFF';
         const prevName = existing.name || name;
+        const prevNum = parseInt(prevReward) || 0;
+        const code = generateCouponCode(prevNum, mobile);
+
         const pName = document.getElementById('blockedPlayerName');
         const pInfo = document.getElementById('blockedPlayerInfo');
         const pRew = document.getElementById('blockedReward');
+        const pCode = document.getElementById('blockedCouponVal');
         if (pName) pName.textContent = prevName;
         if (pInfo) pInfo.textContent = `Mobile: ${mobile}`;
         if (pRew) pRew.textContent = prevReward;
+        if (pCode) pCode.textContent = code;
         showScreen('screenBlocked');
         return;
       }
@@ -3405,6 +3468,22 @@ function showScreen(id) {
   if (btnRetryTimeout) btnRetryTimeout.addEventListener('click', () => game.start());
   const btnClaimTimeout = document.getElementById('btnClaimTimeout');
   if (btnClaimTimeout) btnClaimTimeout.addEventListener('click', () => game.claimDiscount('time'));
+
+  // Copy Coupon Code button event listeners
+  const copyBtnMap = {
+    'btnCopyBlocked': 'blockedCouponVal',
+    'btnCopyOver': 'overCouponVal',
+    'btnCopyTime': 'timeCouponVal',
+    'btnCopyVictory': 'victoryCouponVal'
+  };
+  Object.keys(copyBtnMap).forEach(btnId => {
+    const btn = document.getElementById(btnId);
+    if (btn) {
+      btn.addEventListener('click', () => {
+        copyCouponCode(copyBtnMap[btnId], btn);
+      });
+    }
+  });
 
   document.getElementById('startHint').style.display = 'none';
 

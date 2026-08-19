@@ -61,19 +61,49 @@
       .rule-icon{font-size:13px;flex-shrink:0;}
       .kbd-sm{background:#2b1408;color:#ffe89c;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;font-family:monospace;}
 
-      .venue-notice{
-        background:linear-gradient(135deg, rgba(232,205,130,0.35), rgba(214,168,104,0.2));
-        border:1.5px solid rgba(150,104,52,0.45);
-        border-radius:10px;
-        padding:10px 12px;
-        margin-top:12px;
-        color:#2b1408;
-        font-size:12px;
-        line-height:1.45;
-        text-align:center;
-        box-shadow:0 2px 8px rgba(0,0,0,0.06);
+      #hardModeBanner{
+        position:absolute; top:12px; left:50%;
+        transform:translate3d(-50%, -100%, 0);
+        padding:5px 14px; border-radius:12px;
+        background:linear-gradient(135deg, rgba(29,10,43,0.95), rgba(92,36,0,0.95));
+        border:1.5px solid #ffe89c; color:#ffe89c;
+        font-family:'Trebuchet MS',sans-serif; font-size:12px; font-weight:800;
+        letter-spacing:0.06em; text-transform:uppercase; text-shadow:0 1px 2px rgba(0,0,0,0.8);
+        box-shadow:0 3px 12px rgba(0,0,0,0.45);
+        opacity:0; pointer-events:none; z-index:100;
+        will-change:transform, opacity;
+        transition:transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
       }
-      .venue-notice strong{color:#5c2400;font-weight:800;}
+      #hardModeBanner.show{
+        opacity:1; transform:translate3d(-50%, 0, 0);
+      }
+
+      .coupon-card{
+        background:linear-gradient(135deg, rgba(45,16,68,0.95), rgba(29,10,43,0.98));
+        border:1.5px solid rgba(232,205,130,0.7);
+        border-radius:12px;
+        padding:12px 14px;
+        margin-top:10px;
+        color:#ffe89c;
+        text-align:center;
+        box-shadow:0 4px 14px rgba(0,0,0,0.3);
+      }
+      .coupon-label{font-size:11px;font-weight:800;letter-spacing:0.06em;color:#ffe89c;margin-bottom:6px;text-transform:uppercase;}
+      .coupon-code-box{
+        display:flex;align-items:center;justify-content:space-between;
+        background:rgba(0,0,0,0.4);border:1px dashed rgba(232,205,130,0.6);
+        border-radius:8px;padding:6px 12px;margin-bottom:6px;
+      }
+      .coupon-code-val{font-family:monospace;font-size:18px;font-weight:900;letter-spacing:0.12em;color:#ffffff;}
+      .btn-copy{
+        background:linear-gradient(135deg,#f0d089,#c39a3e);
+        border:none;border-radius:6px;color:#2b1408;
+        font-family:inherit;font-size:11px;font-weight:800;
+        padding:6px 12px;cursor:pointer;transition:transform 0.1s, background 0.2s;
+      }
+      .btn-copy:active{transform:scale(0.94);}
+      .coupon-instructions{font-size:11px;color:rgba(255,255,255,0.88);line-height:1.35;font-weight:600;}
+
       .badge-completed{
         display:inline-block;
         padding:5px 12px;
@@ -90,7 +120,7 @@
 
     <div id="hud">
       <div class="hud-row">
-        <div class="hud-pill" id="modePill">MODE: <b>NORMAL</b></div>
+        <div class="hud-pill" id="modePill">MODE: <b>EASY</b></div>
         <div id="progressWrap"><div id="hardMarker"></div><div id="progressFill"></div></div>
         <div class="hud-pill" id="progressPill">PROGRESS: <b>0%</b></div>
       </div>
@@ -101,7 +131,7 @@
     </div>
 
     <div id="feedbackLayer"></div>
-    <div id="hardModeBanner">HARD MODE UNLOCKED!</div>
+    <div id="hardModeBanner">🟢 EASY MODE</div>
     <div id="startHint">SPACE / &#8593; JUMP &bull; [P] PAUSE &bull; [C] SWITCH CAM</div>
 
     <button id="jumpBtn"><span class="lbl">JUMP<small>&#9650;</small></span></button>
@@ -122,22 +152,23 @@
             <div class="rule-item">
               <span class="rule-icon">🏇</span>
               <div>
-                <strong>Controls:</strong> Press <span class="kbd-sm">SPACE</span> / <span class="kbd-sm">↑</span> or tap <span class="kbd-sm">JUMP</span> to clear hurdles. Press <span class="kbd-sm">C</span> to switch camera view, <span class="kbd-sm">P</span> to pause.
+                <strong>Controls:</strong> Press <span class="kbd-sm">SPACE</span> / <span class="kbd-sm">↑</span> or tap <span class="kbd-sm">JUMP</span> to clear hurdles. Press <span class="kbd-sm">C</span> to switch camera, <span class="kbd-sm">P</span> to pause.
               </div>
             </div>
             <div class="rule-item">
               <span class="rule-icon">🎯</span>
               <div>
-                <strong>3 Attempts Total:</strong> Each participant gets <b>up to 3 attempts</b>. You can retry to improve your score or keep your best discount.
+                <strong>3 Attempts Total:</strong> Each player gets <b>up to 3 attempts</b>. Retry to boost your discount or claim your code!
               </div>
             </div>
             <div class="rule-item">
               <span class="rule-icon">🏷️</span>
               <div>
-                <strong>Discount Tiers:</strong><br>
-                &bull; <b>0% OFF</b>: Miss 1st hurdle or 0 hurdles cleared<br>
-                &bull; <b>1% &ndash; 14% OFF</b>: Scaled based on distance & accuracy<br>
-                &bull; <b>15% OFF (MAX)</b>: Complete 100% of championship course!
+                <strong>Difficulty & Discount Tiers (1% per Hurdle):</strong><br>
+                &bull; <b>🟢 Hurdles 1–5 (Easy)</b>: Earn 1% to 5% OFF<br>
+                &bull; <b>🟡 Hurdles 6–10 (Normal)</b>: Earn 6% to 10% OFF<br>
+                &bull; <b>🟠 Hurdles 11–15 (Hard)</b>: Earn 11% to 15% OFF<br>
+                &bull; <b>🔴 Hurdles 16–20 (Expert)</b>: Earn 16% to 20% OFF (MAX!)
               </div>
             </div>
           </div>
@@ -151,7 +182,7 @@
           <div class="form-group">
             <label for="regMobile">Mobile Number</label>
             <input type="tel" id="regMobile" class="form-control" placeholder="Enter 10-digit mobile number" required maxlength="10" inputmode="numeric" pattern="[6-9][0-9]{9}" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 10);">
-            <div class="form-note">ℹ️ Note: Mobile number will be verified at venue upon discount redemption (must be valid 10-digit number starting with 6, 7, 8, or 9).</div>
+            <div class="form-note">ℹ️ Note: Must be valid 10-digit mobile number starting with 6, 7, 8, or 9. Verified upon ticket redemption.</div>
           </div>
           <div class="reg-error" id="regError"></div>
           <button type="submit" class="btn gold" id="btnRegister" style="margin-top:6px;">CONTINUE TO RACE</button>
@@ -165,7 +196,7 @@
         <div class="eyebrow">ROYAL CHAMPIONSHIP DERBY &bull; TICKET DISCOUNT</div>
         <h1>Race for Discount</h1>
         <img class="hero-img" id="startHero" alt="Horse and rider">
-        <p>Clear every hurdle on the championship course. The first hurdle counts &mdash; miss it and you earn nothing. A fast, clean round earns up to <b>15% OFF</b> your ticket.</p>
+        <p>Clear 20 hurdles on the championship course. The first hurdle counts &mdash; miss it and you earn 0%. A complete, clean round earns up to <b>20% OFF</b> your ticket!</p>
         <button class="btn gold" id="btnStart">START RIDE</button>
         <div class="small-note">
           Desktop: <span class="kbd">SPACE</span> or <span class="kbd">&#8593;</span> &nbsp;&bull;&nbsp; Mobile: tap JUMP
@@ -192,9 +223,13 @@
             <div class="value" id="blockedReward" style="color:#5c2400; font-size:26px; font-weight:900; margin-top:4px;">0% OFF</div>
           </div>
         </div>
-        <div class="venue-notice">
-          📸 <strong>REDEMPTION NOTICE:</strong><br>
-          Take a screenshot of this discount screen and show it at the venue ticket counter to redeem your discount!
+        <div class="coupon-card">
+          <div class="coupon-label">🎟️ YOUR ONLINE TICKET DISCOUNT COUPON</div>
+          <div class="coupon-code-box">
+            <span class="coupon-code-val" id="blockedCouponVal">DERBY20-X8K9M</span>
+            <button class="btn-copy" id="btnCopyBlocked">📋 COPY CODE</button>
+          </div>
+          <div class="coupon-instructions">Use this coupon code during online ticket registration to redeem your discount!</div>
         </div>
         <div class="badge-completed">✅ ALL ATTEMPTS COMPLETED</div>
       </div>
@@ -234,9 +269,13 @@
           <button class="btn gold" id="btnRetryOver">RETRY FOR HIGHER DISCOUNT</button>
           <button class="btn" id="btnClaimOver" style="background:#2b1408; color:#ffe89c; border:1px solid rgba(232,205,130,0.5);">CLAIM &amp; KEEP THIS DISCOUNT</button>
         </div>
-        <div class="venue-notice" id="overNotice" style="display:none;">
-          📸 <strong>IMPORTANT NOTE FOR REDEMPTION:</strong><br>
-          Take a screenshot of this screen now and show this at the venue for discount redemption!
+        <div class="coupon-card" id="overNotice" style="display:none;">
+          <div class="coupon-label">🎟️ YOUR ONLINE TICKET DISCOUNT COUPON</div>
+          <div class="coupon-code-box">
+            <span class="coupon-code-val" id="overCouponVal">DERBY10-A4F7P</span>
+            <button class="btn-copy" id="btnCopyOver">📋 COPY CODE</button>
+          </div>
+          <div class="coupon-instructions">Use this coupon code during online ticket registration to redeem your discount!</div>
         </div>
         <div class="badge-completed" id="overBadge" style="display:none;">✅ RIDE COMPLETED</div>
       </div>
@@ -260,9 +299,13 @@
           <button class="btn gold" id="btnRetryTimeout">RETRY FOR HIGHER DISCOUNT</button>
           <button class="btn" id="btnClaimTimeout" style="background:#2b1408; color:#ffe89c; border:1px solid rgba(232,205,130,0.5);">CLAIM &amp; KEEP THIS DISCOUNT</button>
         </div>
-        <div class="venue-notice" id="timeNotice" style="display:none;">
-          📸 <strong>IMPORTANT NOTE FOR REDEMPTION:</strong><br>
-          Take a screenshot of this screen now and show this at the venue for discount redemption!
+        <div class="coupon-card" id="timeNotice" style="display:none;">
+          <div class="coupon-label">🎟️ YOUR ONLINE TICKET DISCOUNT COUPON</div>
+          <div class="coupon-code-box">
+            <span class="coupon-code-val" id="timeCouponVal">DERBY10-A4F7P</span>
+            <button class="btn-copy" id="btnCopyTime">📋 COPY CODE</button>
+          </div>
+          <div class="coupon-instructions">Use this coupon code during online ticket registration to redeem your discount!</div>
         </div>
         <div class="badge-completed" id="timeBadge" style="display:none;">✅ RIDE COMPLETED</div>
       </div>
@@ -271,19 +314,23 @@
     <!-- VICTORY SCREEN -->
     <div class="overlay" id="screenVictory">
       <div class="card">
-        <div class="eyebrow">MAX DISCOUNT ACHIEVED!</div>
+        <div class="eyebrow">MAX 20% DISCOUNT ACHIEVED!</div>
         <h1>Championship Victory!</h1>
-        <p>🎉 Exceptional ride! You unlocked the maximum <b>15% OFF</b> discount reward!</p>
+        <p>🎉 Exceptional ride! You completed 100% of the course and unlocked the maximum <b>20% OFF</b> discount reward!</p>
         <div class="stat-row">
           <div class="stat-box"><div class="label">TIME</div><div class="value" id="victoryTime">00:00</div></div>
           <div class="stat-box"><div class="label">ACCURACY</div><div class="value" id="victoryAccuracy">0%</div></div>
-          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="victoryReward" style="color:#5c2400; font-weight:900;">15% OFF</div></div>
+          <div class="stat-box"><div class="label">REWARD</div><div class="value" id="victoryReward" style="color:#5c2400; font-weight:900;">20% OFF</div></div>
         </div>
-        <div class="venue-notice" style="display:block;">
-          📸 <strong>IMPORTANT NOTE FOR REDEMPTION:</strong><br>
-          Take a screenshot of this screen now and show this at the venue for discount redemption!
+        <div class="coupon-card">
+          <div class="coupon-label">🎟️ YOUR ONLINE TICKET DISCOUNT COUPON</div>
+          <div class="coupon-code-box">
+            <span class="coupon-code-val" id="victoryCouponVal">DERBY20-X8K9M</span>
+            <button class="btn-copy" id="btnCopyVictory">📋 COPY CODE</button>
+          </div>
+          <div class="coupon-instructions">Use this coupon code during online ticket registration to redeem your discount!</div>
         </div>
-        <div class="badge-completed">🏆 15% MAX REWARD UNLOCKED</div>
+        <div class="badge-completed">🏆 20% MAX REWARD UNLOCKED</div>
       </div>
     </div>
   </div>
