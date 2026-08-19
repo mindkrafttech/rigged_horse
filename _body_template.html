@@ -185,20 +185,20 @@
             <div class="form-note">ℹ️ Note: Must be valid 10-digit mobile number starting with 6, 7, 8, or 9. Verified upon ticket redemption.</div>
           </div>
           <div class="reg-error" id="regError"></div>
-          <button type="submit" class="btn gold" id="btnRegister" style="margin-top:6px;">CONTINUE TO RACE</button>
+          <button type="submit" class="btn gold" id="btnRegister" style="margin-top:6px;">VERIFY &amp; CONTINUE &rarr;</button>
         </form>
       </div>
     </div>
 
-    <!-- START SCREEN -->
+    <!-- START GAME / VERIFICATION SUCCESS POPUP -->
     <div class="overlay" id="screenStart">
-      <div class="card">
-        <div class="eyebrow">ROYAL CHAMPIONSHIP DERBY &bull; TICKET DISCOUNT</div>
-        <h1>Race for Discount</h1>
+      <div class="card" style="max-width:440px;">
+        <div class="eyebrow">✅ VERIFICATION COMPLETE</div>
+        <h1>Ready to Race!</h1>
         <img class="hero-img" id="startHero" alt="Horse and rider">
-        <p>Clear 20 hurdles on the championship course. The first hurdle counts &mdash; miss it and you earn 0%. A complete, clean round earns up to <b>20% OFF</b> your ticket!</p>
-        <button class="btn gold" id="btnStart">START RIDE</button>
-        <div class="small-note">
+        <p id="startWelcomeText">Verification successful! You have <b>3 attempts</b> to clear 20 hurdles on the championship course and win up to <b>20% OFF</b> your ticket!</p>
+        <button class="btn gold" id="btnStart" style="font-size:16px; padding:12px 24px; margin-top:10px;">START GAME &#127943;</button>
+        <div class="small-note" style="margin-top:10px;">
           Desktop: <span class="kbd">SPACE</span> or <span class="kbd">&#8593;</span> &nbsp;&bull;&nbsp; Mobile: tap JUMP
         </div>
       </div>

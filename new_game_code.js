@@ -3481,7 +3481,7 @@ function showScreen(id) {
 
       if (btnRegister) {
         btnRegister.disabled = false;
-        btnRegister.textContent = 'CONTINUE TO RACE';
+        btnRegister.textContent = 'VERIFY & CONTINUE \u2794';
       }
 
       if (existing && (existing.completed || (existing.attempts_used >= 3))) {
@@ -3507,6 +3507,14 @@ function showScreen(id) {
         playerRecord = await savePlayerRecord(name, mobile);
       }
       game.player = playerRecord;
+
+      const welcomeText = document.getElementById('startWelcomeText');
+      if (welcomeText) {
+        const attemptsUsed = parseInt(playerRecord.attempts_used) || 0;
+        const attemptsLeft = Math.max(1, 3 - attemptsUsed);
+        welcomeText.innerHTML = `Welcome <b>${name}</b>! Verification successful. You have <b>${attemptsLeft} ${attemptsLeft === 1 ? 'attempt' : 'attempts'}</b> to clear 20 hurdles and win up to <b>20% OFF</b> your ticket!`;
+      }
+
       showScreen('screenStart');
     });
   }
