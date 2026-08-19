@@ -2966,7 +2966,8 @@ class Game {
     }
   }
 
-  async gameOver() {
+  gameOver() {
+    if (this.state === STATE.GAME_OVER) return;
     this.state = STATE.GAME_OVER;
     this.animState = ANIM.HIT;
     Sound.hit();
@@ -2978,7 +2979,23 @@ class Game {
     stats.reward = reward;
     this.lastResultData = stats;
 
-    const resData = await updatePlayerResult(this.player ? this.player.mobile : '', stats, false);
+    const mob = (this.player && this.player.mobile) ? this.player.mobile : '';
+    let existingRaw = null;
+    try {
+      const raw = localStorage.getItem('derby_player_' + mob);
+      if (raw) existingRaw = JSON.parse(raw);
+    } catch(e){}
+
+    const attemptsUsed = existingRaw ? (parseInt(existingRaw.attempts_used) || 0) : 0;
+    const bestRewardNum = existingRaw ? (parseInt(existingRaw.best_reward) || 0) : 0;
+    const newBestNum = Math.max(bestRewardNum, reward);
+    const newAttempts = Math.min(3, attemptsUsed + 1);
+
+    const tempResData = {
+      attempts_used: newAttempts,
+      best_reward: newBestNum + '% OFF',
+      completed: newBestNum >= 20 || newAttempts >= 3
+    };
 
     document.getElementById('overProgress').textContent = stats.progress + '%';
     document.getElementById('overAccuracy').textContent = Math.round(stats.accuracy * 100) + '%';
@@ -2992,11 +3009,20 @@ class Game {
       document.getElementById('overDesc').textContent = 'The horse caught the rail. Here is your earned discount.';
     }
 
-    this.renderResultCardUI('over', reward, resData);
-    setTimeout(() => showScreen('screenOver'), 500);
+    // INSTANT POPUP DISPLAY — 0ms delay!
+    this.renderResultCardUI('over', reward, tempResData);
+    showScreen('screenOver');
+
+    // Non-blocking background sync to Google Sheets
+    if (mob) {
+      updatePlayerResult(mob, stats, false).then(resData => {
+        if (resData) this.renderResultCardUI('over', reward, resData);
+      });
+    }
   }
 
-  async timeOut() {
+  timeOut() {
+    if (this.state === STATE.TIMEOUT) return;
     this.state = STATE.TIMEOUT;
     Sound.stopGallop();
     Sound.stopMusic();
@@ -3006,17 +3032,42 @@ class Game {
     stats.reward = reward;
     this.lastResultData = stats;
 
-    const resData = await updatePlayerResult(this.player ? this.player.mobile : '', stats, false);
+    const mob = (this.player && this.player.mobile) ? this.player.mobile : '';
+    let existingRaw = null;
+    try {
+      const raw = localStorage.getItem('derby_player_' + mob);
+      if (raw) existingRaw = JSON.parse(raw);
+    } catch(e){}
+
+    const attemptsUsed = existingRaw ? (parseInt(existingRaw.attempts_used) || 0) : 0;
+    const bestRewardNum = existingRaw ? (parseInt(existingRaw.best_reward) || 0) : 0;
+    const newBestNum = Math.max(bestRewardNum, reward);
+    const newAttempts = Math.min(3, attemptsUsed + 1);
+
+    const tempResData = {
+      attempts_used: newAttempts,
+      best_reward: newBestNum + '% OFF',
+      completed: newBestNum >= 20 || newAttempts >= 3
+    };
 
     document.getElementById('timeProgress').textContent = stats.progress + '%';
     document.getElementById('timeAccuracy').textContent = Math.round(stats.accuracy * 100) + '%';
     document.getElementById('timeReward').textContent = reward + '% OFF';
 
-    this.renderResultCardUI('time', reward, resData);
-    setTimeout(() => showScreen('screenTimeout'), 400);
+    // INSTANT POPUP DISPLAY — 0ms delay!
+    this.renderResultCardUI('time', reward, tempResData);
+    showScreen('screenTimeout');
+
+    // Non-blocking background sync to Google Sheets
+    if (mob) {
+      updatePlayerResult(mob, stats, false).then(resData => {
+        if (resData) this.renderResultCardUI('time', reward, resData);
+      });
+    }
   }
 
-  async victory() {
+  victory() {
+    if (this.state === STATE.VICTORY) return;
     this.state = STATE.VICTORY;
     if (this.env.onVictory) this.env.onVictory();
     Sound.victory();
@@ -3028,8 +3079,6 @@ class Game {
     stats.reward = reward;
     this.lastResultData = stats;
 
-    await updatePlayerResult(this.player ? this.player.mobile : '', stats, true);
-
     const mob = (this.player && this.player.mobile) ? this.player.mobile : '';
     const code = generateCouponCode(20, mob);
     const vicCodeEl = document.getElementById('victoryCouponVal');
@@ -3039,7 +3088,13 @@ class Game {
     document.getElementById('victoryAccuracy').textContent = Math.round(stats.accuracy * 100) + '%';
     document.getElementById('victoryReward').textContent = '20% OFF';
 
-    setTimeout(() => showScreen('screenVictory'), 350);
+    // INSTANT POPUP DISPLAY — 0ms delay!
+    showScreen('screenVictory');
+
+    // Non-blocking background sync to Google Sheets
+    if (mob) {
+      updatePlayerResult(mob, stats, true);
+    }
   }
 
   renderResultCardUI(prefix, currentReward, resData) {
@@ -3077,13 +3132,11 @@ class Game {
     }
   }
 
-  async claimDiscount(prefix) {
+  claimDiscount(prefix) {
     const stats = this.lastResultData || this.getStats();
-    if (this.player && this.player.mobile) {
-      await updatePlayerResult(this.player.mobile, stats, true);
-    }
+    const mob = (this.player && this.player.mobile) ? this.player.mobile : '';
     const bestNum = stats.reward || 0;
-    const code = generateCouponCode(bestNum, this.player ? this.player.mobile : '');
+    const code = generateCouponCode(bestNum, mob);
     const codeEl = document.getElementById(prefix + 'CouponVal');
     if (codeEl) codeEl.textContent = code;
 
@@ -3095,6 +3148,11 @@ class Game {
     if (badgeEl) {
       badgeEl.style.display = 'inline-block';
       badgeEl.textContent = '✅ DISCOUNT CLAIMED & LOCKED';
+    }
+
+    // Non-blocking background sync to Google Sheets
+    if (mob) {
+      updatePlayerResult(mob, stats, true);
     }
   }
 
