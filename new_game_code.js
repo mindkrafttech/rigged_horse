@@ -71,7 +71,7 @@ const GC = {
 };
 
 /* ----------------------------- GAME STATES -------------------------------- */
-const STATE = { START: 0, PLAYING: 1, GAME_OVER: 2, VICTORY: 3, TIMEOUT: 4 };
+const STATE = { START: 0, PLAYING: 1, GAME_OVER: 2, VICTORY: 3, TIMEOUT: 4, PAUSED: 5 };
 const ANIM  = { IDLE: 0, RUN: 1, JUMP: 2, HIT: 3 };
 
 /* ----------------------------- SOUND -------------------------------------- */
@@ -2413,13 +2413,29 @@ class ThreeEnv {
     if (this.turfTex) this.turfTex.offset.x = this.scrollX / 17.5;
   }
 
-  /* ----- Camera (unchanged framing rules: horse + next hurdle always clear) */
+  setCameraMode(mode) {
+    if (this.cameraMode === undefined) this.cameraMode = 0;
+    if (mode === undefined || mode === null) {
+      this.cameraMode = (this.cameraMode + 1) % 4;
+    } else {
+      this.cameraMode = Math.abs(mode) % 4;
+    }
+    const names = ['CAM: SIDE', 'CAM: CLOSE', 'CAM: HIGH', 'CAM: CINEMATIC'];
+    const lbl = document.getElementById('cameraModeLbl');
+    if (lbl) lbl.textContent = names[this.cameraMode];
+    const pauseLbl = document.getElementById('pauseCamLbl');
+    if (pauseLbl) pauseLbl.textContent = names[this.cameraMode];
+    return this.cameraMode;
+  }
+
+  /* ----- Camera with multiple player-selectable views ----- */
   updateCamera(dt, jumpY, speed, hardMode) {
+    if (this.cameraMode === undefined) this.cameraMode = 0;
     const aspect = this.camera.aspect || 1.0;
     const isMobilePortrait = aspect < 1.1;
 
-    const targetZ = (isMobilePortrait ? 13.5 : 12.0) + (hardMode ? 0 : 0.5);
-    const targetCamX = isMobilePortrait ? -2.5 : -1.0;
+    let targetZ, targetCamX, targetY, lookX, lookY;
+    const jumpFollow = jumpY * 0.25;
 
     const swayTarget = Math.min(0.12, speed * 0.005);
     this.camSwayAmp += (swayTarget - this.camSwayAmp) * dt * 3;
@@ -2427,16 +2443,44 @@ class ThreeEnv {
     const t = performance.now() * 0.001;
     const sway = Math.sin(t * 2.8) * this.camSwayAmp;
     const bounce = Math.sin(t * 5.6) * this.camSwayAmp * 0.3;
-    const jumpFollow = jumpY * 0.25;
 
-    const targetY = (isMobilePortrait ? 4.2 : 4.5) + jumpFollow + bounce;
+    switch (this.cameraMode) {
+      case 1: // CLOSE-UP / ACTION
+        targetZ = (isMobilePortrait ? 9.5 : 8.2) + (hardMode ? 0 : 0.3);
+        targetCamX = isMobilePortrait ? -1.8 : -0.2;
+        targetY = (isMobilePortrait ? 3.4 : 3.2) + jumpFollow * 0.8 + bounce;
+        lookX = (isMobilePortrait ? 2.0 : 4.2) + sway;
+        lookY = 1.2 + jumpY * 0.15;
+        break;
+      case 2: // BROADCAST / HIGH OVERVIEW
+        targetZ = (isMobilePortrait ? 16.5 : 15.0);
+        targetCamX = isMobilePortrait ? -3.0 : -1.5;
+        targetY = (isMobilePortrait ? 8.0 : 8.5) + jumpFollow * 0.5;
+        lookX = (isMobilePortrait ? 2.5 : 5.5) + sway;
+        lookY = 0.5;
+        break;
+      case 3: // CINEMATIC DYNAMIC ANGLED
+        targetZ = (isMobilePortrait ? 11.5 : 9.8);
+        targetCamX = isMobilePortrait ? -4.0 : -3.2;
+        targetY = (isMobilePortrait ? 2.6 : 2.5) + jumpFollow * 0.7 + bounce * 0.5;
+        lookX = (isMobilePortrait ? 2.8 : 4.8) + sway;
+        lookY = 1.4 + jumpY * 0.2;
+        break;
+      case 0: // SIDE (Default Classic)
+      default:
+        targetZ = (isMobilePortrait ? 13.5 : 12.0) + (hardMode ? 0 : 0.5);
+        targetCamX = isMobilePortrait ? -2.5 : -1.0;
+        targetY = (isMobilePortrait ? 4.2 : 4.5) + jumpFollow + bounce;
+        lookX = (isMobilePortrait ? 1.5 : 5.0) + sway;
+        lookY = 1.0 + jumpY * 0.12;
+        break;
+    }
 
-    this.camera.position.x += (targetCamX - this.camera.position.x) * dt * 4;
-    this.camera.position.y += (targetY - this.camera.position.y) * dt * 4;
-    this.camera.position.z += (targetZ - this.camera.position.z) * dt * 4;
+    const lerpSpeed = Math.min(1.0, dt * 5.0);
+    this.camera.position.x += (targetCamX - this.camera.position.x) * lerpSpeed;
+    this.camera.position.y += (targetY - this.camera.position.y) * lerpSpeed;
+    this.camera.position.z += (targetZ - this.camera.position.z) * lerpSpeed;
 
-    const lookX = (isMobilePortrait ? 1.5 : 5.0) + sway;
-    const lookY = 1 + jumpY * 0.12;
     this.camera.lookAt(lookX, lookY, 0);
   }
 
@@ -2500,22 +2544,26 @@ class ThreeEnv {
     if (!game) { this.renderer.render(this.scene, this.camera); return; }
 
     const isGameOver = (game.state === STATE.GAME_OVER);
-    const speed = isGameOver ? 0 : getDifficulty(game.progress).speed;
+    const isPaused   = (game.state === STATE.PAUSED);
+    const speed = (isGameOver || isPaused) ? 0 : getDifficulty(game.progress).speed;
     this.speed = speed;
 
-    const delta = isGameOver ? 0 : speed * dt;
-    if (!isGameOver) this.scrollWorld(delta, speed);
+    const delta = (isGameOver || isPaused) ? 0 : speed * dt;
+    if (!isGameOver && !isPaused) this.scrollWorld(delta, speed);
 
     this.syncHorse(game.jumpY, game.animState, game.animFrame, game.state);
     this._lastVY = game.jumpVY;
     this.syncHurdles(game.hurdles);
 
-    // continuous hoof dust while galloping
-    if (game.state === STATE.PLAYING && !game.isAirborne && Math.random() < 0.35) {
-      this.emitDust(GC.world.horseX - 0.8, 0.2, 0.8, 3, 0.8 + this.stage * 0.1);
+    // continuous hoof dust while galloping (reduced slightly on mobile view)
+    const isMobile = (this.camera.aspect < 1.1 || window.innerWidth < 768);
+    const dustProb = isMobile ? 0.18 : 0.35;
+    const dustCount = isMobile ? 2 : 3;
+    if (game.state === STATE.PLAYING && !game.isAirborne && Math.random() < dustProb) {
+      this.emitDust(GC.world.horseX - 0.8, 0.2, 0.8, dustCount, (isMobile ? 0.6 : 0.8) + this.stage * 0.1);
     }
 
-    this.updateAtmosphere(dt, delta, game.progress);
+    if (!isPaused) this.updateAtmosphere(dt, delta, game.progress);
     this.updateCamera(dt, game.jumpY, speed, game.hardMode);
 
     /* --- finish gate: driven by real remaining course distance --- */
@@ -2587,6 +2635,14 @@ class Game {
     const jump = (e) => { if (e) e.preventDefault(); this.requestJump(); };
     window.addEventListener('keydown', e => {
       if (e.code === 'Space' || e.code === 'ArrowUp') jump(e);
+      if (e.code === 'KeyC' || e.key === 'c' || e.key === 'C') {
+        if (this.env) this.env.setCameraMode();
+      }
+      if (e.code === 'KeyP' || e.key === 'p' || e.key === 'P' || e.code === 'Escape') {
+        if (this.state === STATE.PLAYING || this.state === STATE.PAUSED) {
+          this.togglePause();
+        }
+      }
     });
     const btn = document.getElementById('jumpBtn');
     const press   = e => { btn.classList.add('pressed'); jump(e); };
@@ -2602,6 +2658,36 @@ class Game {
       Sound.setMuted(m);
       document.getElementById('muteBtn').textContent = m ? '🔇' : '🔊';
     });
+
+    const pauseBtn = document.getElementById('pauseBtn');
+    if (pauseBtn) {
+      pauseBtn.addEventListener('click', () => {
+        if (this.state === STATE.PLAYING || this.state === STATE.PAUSED) {
+          this.togglePause();
+        }
+      });
+    }
+
+    const camBtn = document.getElementById('cameraBtn');
+    if (camBtn) {
+      camBtn.addEventListener('click', () => {
+        if (this.env) this.env.setCameraMode();
+      });
+    }
+
+    const pauseCamBtn = document.getElementById('pauseCamBtn');
+    if (pauseCamBtn) {
+      pauseCamBtn.addEventListener('click', () => {
+        if (this.env) this.env.setCameraMode();
+      });
+    }
+
+    const btnResume = document.getElementById('btnResume');
+    if (btnResume) {
+      btnResume.addEventListener('click', () => {
+        if (this.state === STATE.PAUSED) this.togglePause();
+      });
+    }
   }
 
   requestJump() {
@@ -2784,7 +2870,31 @@ class Game {
     });
   }
 
+  togglePause() {
+    if (this.state === STATE.PLAYING) {
+      this.state = STATE.PAUSED;
+      Sound.stopGallop();
+      if (Sound.bgMusic && typeof Sound.bgMusic.pause === 'function') {
+        try { Sound.bgMusic.pause(); } catch(e){}
+      }
+      showScreen('screenPause');
+      const btn = document.getElementById('pauseBtn');
+      if (btn) btn.textContent = '▶';
+    } else if (this.state === STATE.PAUSED) {
+      this.state = STATE.PLAYING;
+      this.lastTime = performance.now();
+      Sound.startMusic();
+      showScreen(null);
+      const btn = document.getElementById('pauseBtn');
+      if (btn) btn.textContent = '⏸';
+    }
+  }
+
   update(dt) {
+    if (this.state === STATE.PAUSED) {
+      Sound.stopGallop();
+      return;
+    }
     if (this.state !== STATE.PLAYING) {
       Sound.stopGallop();
       return;
