@@ -724,21 +724,6 @@ const Sound = (() => {
     return ctx;
   }
 
-  // Attempt to pre-load optional custom audio files from sprites/ or audio/ folder
-  try {
-    const gAudio = new Audio('sprites/gallop.mp3');
-    gAudio.loop = true;
-    gAudio.volume = 0.5;
-    gAudio.onerror = () => { hasCustomGallop = false; };
-    gAudio.addEventListener('canplaythrough', () => { customGallopAudio = gAudio; hasCustomGallop = true; });
-
-    const mAudio = new Audio('sprites/music.mp3');
-    mAudio.loop = true;
-    mAudio.volume = 0.4;
-    mAudio.onerror = () => { hasCustomMusic = false; };
-    mAudio.addEventListener('canplaythrough', () => { customMusicAudio = mAudio; hasCustomMusic = true; });
-  } catch(e){}
-
   function tone(freq, dur, type='sine', gain=0.16, delay=0) {
     if (muted) return;
     const c = ensure(); if (!c) return;
@@ -3553,8 +3538,16 @@ class Game {
     this.animTimer = 0;
     this.idleFrame = 0;
     this.idleTimer = 0;
-    updateHUD(this);
-    setModeUI(false);
+
+    // Reset HUD elements
+    const modePill = document.getElementById('modePill');
+    if (modePill) modePill.innerHTML = 'MODE: <b>EASY</b>';
+    const progPill = document.getElementById('progressPill');
+    if (progPill) progPill.innerHTML = 'PROGRESS: <b>0%</b>';
+    const rewPill = document.getElementById('rewardPill');
+    if (rewPill) rewPill.innerHTML = 'REWARD: <b>0% OFF</b>';
+    const progFill = document.getElementById('progressFill');
+    if (progFill) progFill.style.width = '0%';
   }
 
   start() {
