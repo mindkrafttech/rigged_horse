@@ -2735,9 +2735,14 @@ class Game {
   _bindInput() {
     const jump = (e) => { if (e) e.preventDefault(); this.requestJump(); };
     window.addEventListener('keydown', e => {
+      const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
       if (e.code === 'Space' || e.code === 'ArrowUp') jump(e);
       if (e.code === 'KeyC' || e.key === 'c' || e.key === 'C') {
-        if (this.env) this.env.setCameraMode();
+        if (this.env && (this.state === STATE.PLAYING || this.state === STATE.PAUSED)) {
+          this.env.setCameraMode();
+        }
       }
       if (e.code === 'KeyP' || e.key === 'p' || e.key === 'P' || e.code === 'Escape') {
         if (this.state === STATE.PLAYING || this.state === STATE.PAUSED) {
@@ -2772,14 +2777,18 @@ class Game {
     const camBtn = document.getElementById('cameraBtn');
     if (camBtn) {
       camBtn.addEventListener('click', () => {
-        if (this.env) this.env.setCameraMode();
+        if (this.env && (this.state === STATE.PLAYING || this.state === STATE.PAUSED)) {
+          this.env.setCameraMode();
+        }
       });
     }
 
     const pauseCamBtn = document.getElementById('pauseCamBtn');
     if (pauseCamBtn) {
       pauseCamBtn.addEventListener('click', () => {
-        if (this.env) this.env.setCameraMode();
+        if (this.env && (this.state === STATE.PLAYING || this.state === STATE.PAUSED)) {
+          this.env.setCameraMode();
+        }
       });
     }
 

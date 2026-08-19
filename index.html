@@ -330,30 +330,32 @@
       #pauseBtn:active{transform:scale(0.94);}
 
       .form-group{text-align:left;margin-bottom:10px;width:100%;box-sizing:border-box;}
-      .form-group label{display:block;font-size:11px;font-weight:700;letter-spacing:0.05em;color:rgba(232,205,130,0.9);margin-bottom:4px;text-transform:uppercase;}
-      .form-control{width:100%;padding:9px 12px;border-radius:8px;border:1px solid rgba(232,205,130,0.35);background:rgba(18,7,28,0.75);color:#fff;font-family:inherit;font-size:13px;outline:none;box-sizing:border-box;transition:border-color 0.2s;}
-      .form-control:focus{border-color:#f0d089;box-shadow:0 0 0 2px rgba(240,208,137,0.25);}
-      .reg-error{color:#ff7b7b;font-size:12px;margin-top:4px;min-height:16px;text-align:center;font-weight:600;}
+      .form-group label{display:block;font-size:11px;font-weight:800;letter-spacing:0.05em;color:#2b1408;margin-bottom:4px;text-transform:uppercase;}
+      .form-control{width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid rgba(150,104,52,0.4);background:#ffffff;color:#1d0a2b;font-family:inherit;font-size:13px;font-weight:600;outline:none;box-sizing:border-box;transition:border-color 0.2s, box-shadow 0.2s;}
+      .form-control::placeholder{color:#776655;font-weight:400;}
+      .form-control:focus{border-color:#5c2400;box-shadow:0 0 0 2px rgba(92,36,0,0.2);}
+      .form-note{font-size:11px;color:#554433;margin-top:3px;line-height:1.35;font-weight:600;text-align:left;}
+      .reg-error{color:#d32f2f;font-size:12px;margin-top:4px;min-height:16px;text-align:center;font-weight:700;}
       .venue-notice{
-        background:linear-gradient(135deg, rgba(232,205,130,0.18), rgba(214,168,104,0.1));
-        border:1px solid rgba(232,205,130,0.5);
+        background:linear-gradient(135deg, rgba(232,205,130,0.35), rgba(214,168,104,0.2));
+        border:1.5px solid rgba(150,104,52,0.45);
         border-radius:10px;
         padding:10px 12px;
         margin-top:12px;
-        color:#fffaed;
+        color:#2b1408;
         font-size:12px;
         line-height:1.45;
         text-align:center;
-        box-shadow:0 4px 14px rgba(0,0,0,0.2);
+        box-shadow:0 2px 8px rgba(0,0,0,0.06);
       }
-      .venue-notice strong{color:#ffe89c;}
+      .venue-notice strong{color:#5c2400;font-weight:800;}
       .badge-completed{
         display:inline-block;
         padding:5px 12px;
         border-radius:20px;
-        background:rgba(232,205,130,0.18);
-        border:1px solid rgba(232,205,130,0.4);
-        color:#f6f1e6;
+        background:rgba(29,10,43,0.1);
+        border:1px solid rgba(29,10,43,0.3);
+        color:#1d0a2b;
         font-size:11px;
         font-weight:700;
         letter-spacing:0.05em;
@@ -387,7 +389,7 @@
       <div class="card">
         <div class="eyebrow">ROYAL CHAMPIONSHIP DERBY &bull; REGISTRATION</div>
         <h1>Player Registration</h1>
-        <p style="margin-bottom:14px;">Enter your details to enter the Derby. <b>Note:</b> Each player (Email / Mobile) gets <b>1 single attempt</b>.</p>
+        <p style="margin-bottom:14px; color:#443322;">Enter your details to enter the Derby. <b>Note:</b> Each player (Email / Mobile) gets <b>1 single attempt</b>.</p>
         
         <form id="regForm" onsubmit="return false;" style="width:100%;">
           <div class="form-group">
@@ -397,6 +399,7 @@
           <div class="form-group">
             <label for="regMobile">Mobile Number</label>
             <input type="tel" id="regMobile" class="form-control" placeholder="Enter 10-digit mobile number" required pattern="[0-9]{10}">
+            <div class="form-note">ℹ️ Note: Your mobile number will be verified at the venue upon discount code redemption.</div>
           </div>
           <div class="form-group">
             <label for="regEmail">Email Address</label>
@@ -3262,9 +3265,14 @@ class Game {
   _bindInput() {
     const jump = (e) => { if (e) e.preventDefault(); this.requestJump(); };
     window.addEventListener('keydown', e => {
+      const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
       if (e.code === 'Space' || e.code === 'ArrowUp') jump(e);
       if (e.code === 'KeyC' || e.key === 'c' || e.key === 'C') {
-        if (this.env) this.env.setCameraMode();
+        if (this.env && (this.state === STATE.PLAYING || this.state === STATE.PAUSED)) {
+          this.env.setCameraMode();
+        }
       }
       if (e.code === 'KeyP' || e.key === 'p' || e.key === 'P' || e.code === 'Escape') {
         if (this.state === STATE.PLAYING || this.state === STATE.PAUSED) {
@@ -3299,14 +3307,18 @@ class Game {
     const camBtn = document.getElementById('cameraBtn');
     if (camBtn) {
       camBtn.addEventListener('click', () => {
-        if (this.env) this.env.setCameraMode();
+        if (this.env && (this.state === STATE.PLAYING || this.state === STATE.PAUSED)) {
+          this.env.setCameraMode();
+        }
       });
     }
 
     const pauseCamBtn = document.getElementById('pauseCamBtn');
     if (pauseCamBtn) {
       pauseCamBtn.addEventListener('click', () => {
-        if (this.env) this.env.setCameraMode();
+        if (this.env && (this.state === STATE.PLAYING || this.state === STATE.PAUSED)) {
+          this.env.setCameraMode();
+        }
       });
     }
 
