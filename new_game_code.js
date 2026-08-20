@@ -62,13 +62,13 @@ const GC = {
   },
   difficulty: [
     // Hurdles 1–5 (Progress 0–25%, 0–5% Discount): 🟢 EASY MODE
-    { minPct: 0,   speed: 18.5, gapMs: [2100, 2400], railH: 1.45, name: '🟢 EASY MODE', color: '#4CAF50' },
+    { minPct: 0,   speed: 18.5, gapMs: [2000, 2300], railH: 1.45, name: '🟢 EASY MODE', color: '#4CAF50' },
     // Hurdles 6–10 (Progress 26–50%, 6–10% Discount): ⚡ TOUGH MODE
-    { minPct: 26,  speed: 26.0, gapMs: [900, 1100], railH: 1.60, name: '⚡ TOUGH MODE', color: '#e8a838' },
+    { minPct: 26,  speed: 24.0, gapMs: [1500, 1750], railH: 1.55, name: '⚡ TOUGH MODE', color: '#e8a838' },
     // Hurdles 11–15 (Progress 51–75%, 11–15% Discount): 🔥 EXTREME TOUGH
-    { minPct: 51,  speed: 32.0, gapMs: [700, 850], railH: 1.68, name: '🔥 EXTREME TOUGH', color: '#ff9933' },
+    { minPct: 51,  speed: 28.0, gapMs: [1300, 1500], railH: 1.62, name: '🔥 EXTREME TOUGH', color: '#ff9933' },
     // Hurdles 16–20 (Progress 76–100%, 16–20% Discount): ☠️ IMPOSSIBLE MODE
-    { minPct: 76,  speed: 38.0, gapMs: [550, 700], railH: 1.78, name: '☠️ IMPOSSIBLE MODE', color: '#ff4d4d' },
+    { minPct: 76,  speed: 32.0, gapMs: [1180, 1350], railH: 1.70, name: '☠️ IMPOSSIBLE MODE', color: '#ff4d4d' },
   ],
 };
 
@@ -2929,12 +2929,24 @@ class Game {
   }
 
   requestJump() {
-    if (this.state !== STATE.PLAYING || this.isAirborne) return;
+    if (this.state !== STATE.PLAYING) return;
+    if (this.isAirborne) {
+      if (this.jumpVY < 5) {
+        this.jumpBufferTimer = 0.18; // 180ms buffer window near ground
+      }
+      return;
+    }
+    this._executeJump();
+  }
+
+  _executeJump() {
     this.isAirborne = true;
+    this.jumpY = 0.001;
     this.jumpVY = GC.player.jumpVelocity;
     this.animState = ANIM.JUMP;
     this.animFrame = 0;
     this.animTimer = 0;
+    this.jumpBufferTimer = 0;
     this.env.triggerJumpDust();
     Sound.jump();
   }
@@ -2965,6 +2977,7 @@ class Game {
     this.jumpY  = 0;
     this.jumpVY = 0;
     this.isAirborne = false;
+    this.jumpBufferTimer = 0;
     this.animState = ANIM.RUN;
     this.animFrame = 0;
     this.animTimer = 0;
@@ -3358,7 +3371,15 @@ class Game {
         this.animTimer  = 0;
         this.env.triggerLandingDust();
         Sound.land();
+
+        if (this.jumpBufferTimer > 0) {
+          this._executeJump();
+        }
       }
+    }
+
+    if (this.jumpBufferTimer > 0) {
+      this.jumpBufferTimer -= dt;
     }
 
     /* -- Animation timing -- */
