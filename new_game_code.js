@@ -256,17 +256,34 @@ function calculateReward(progress, elapsedTime = 0, remainingTime = 40, stats = 
   return Math.max(REWARD_CONFIG.minimum, Math.min(REWARD_CONFIG.maximum, reward));
 }
 
-function generateCouponCode(discountPct, mobile) {
-  const cleanMob = (mobile || '').toString().slice(-4) || '2026';
-  const seed = (cleanMob + '_' + discountPct).split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let hash = '';
-  let n = seed * 9301 + 49297;
-  for (let i = 0; i < 4; i++) {
-    n = (n * 9301 + 49297) % 233280;
-    hash += chars[Math.floor((n / 233280) * chars.length)];
-  }
-  return `DERBY${discountPct}${hash}`;
+/* ----------------------------- FIXED COUPON CODES FOR DISCOUNTS ----------------------------- */
+const COUPON_CODES = {
+  1:  'ECLHOOF',
+  2:  'ECLPACE',
+  3:  'ECLTROT',
+  4:  'ECLLEAP',
+  5:  'ECLBOUND',
+  6:  'ECLSTRIDE',
+  7:  'ECLRUNNER',
+  8:  'ECLCANTER',
+  9:  'ECLGALLOP',
+  10: 'ECLDERBY',
+  11: 'ECLSTALLION',
+  12: 'ECLMUSTANG',
+  13: 'ECLTHUNDER',
+  14: 'ECLCHARGER',
+  15: 'ECLCHAMPION',
+  16: 'ECLMAJESTY',
+  17: 'ECLSUPREME',
+  18: 'ECLTRIUMPH',
+  19: 'ECLVICTORY',
+  20: 'ECLGOLDEN',
+};
+
+function generateCouponCode(discountPct) {
+  const pct = parseInt(discountPct) || 0;
+  if (pct <= 0) return '';
+  return COUPON_CODES[pct] || `ECLDISCOUNT`;
 }
 
 function copyCouponCode(elementId, btnEl) {
@@ -3148,14 +3165,18 @@ class Game {
     const mob = (this.player && this.player.mobile) ? this.player.mobile : '';
     const code = generateCouponCode(bestNum, mob);
     const codeEl = document.getElementById(prefix + 'CouponVal');
-    if (codeEl) codeEl.textContent = code;
+    const noticeEl = document.getElementById(prefix + 'Notice');
+
+    if (bestNum > 0 && code) {
+      if (codeEl) codeEl.textContent = code;
+      if (noticeEl) noticeEl.style.display = 'block';
+    } else {
+      if (noticeEl) noticeEl.style.display = 'none';
+    }
 
     const infoEl = document.getElementById(prefix + 'AttemptInfo');
     const actionsEl = document.getElementById(prefix + 'ActionsWrap');
-    const noticeEl = document.getElementById(prefix + 'Notice');
     const badgeEl = document.getElementById(prefix + 'Badge');
-
-    if (noticeEl) noticeEl.style.display = 'block';
 
     if (currentReward >= 20 || isCompleted || attempts >= 3) {
       if (infoEl) infoEl.textContent = `All 3 Attempts Completed • Best Discount: ${bestRewardStr}`;
@@ -3180,16 +3201,25 @@ class Game {
     const bestNum = stats.reward || 0;
     const code = generateCouponCode(bestNum, mob);
     const codeEl = document.getElementById(prefix + 'CouponVal');
-    if (codeEl) codeEl.textContent = code;
-
-    const actionsEl = document.getElementById(prefix + 'ActionsWrap');
     const noticeEl = document.getElementById(prefix + 'Notice');
+    const actionsEl = document.getElementById(prefix + 'ActionsWrap');
     const badgeEl = document.getElementById(prefix + 'Badge');
-    if (actionsEl) actionsEl.style.display = 'none';
-    if (noticeEl) noticeEl.style.display = 'block';
-    if (badgeEl) {
-      badgeEl.style.display = 'inline-block';
-      badgeEl.textContent = '✅ DISCOUNT CLAIMED & LOCKED';
+
+    if (bestNum > 0 && code) {
+      if (codeEl) codeEl.textContent = code;
+      if (noticeEl) noticeEl.style.display = 'block';
+      if (actionsEl) actionsEl.style.display = 'none';
+      if (badgeEl) {
+        badgeEl.style.display = 'inline-block';
+        badgeEl.textContent = '✅ DISCOUNT CLAIMED & LOCKED';
+      }
+    } else {
+      if (noticeEl) noticeEl.style.display = 'none';
+      if (actionsEl) actionsEl.style.display = 'none';
+      if (badgeEl) {
+        badgeEl.style.display = 'inline-block';
+        badgeEl.textContent = '❌ NO DISCOUNT TO CLAIM';
+      }
     }
 
     // Non-blocking background sync to Google Sheets
@@ -3574,10 +3604,16 @@ function showScreen(id) {
         const pInfo = document.getElementById('blockedPlayerInfo');
         const pRew = document.getElementById('blockedReward');
         const pCode = document.getElementById('blockedCouponVal');
+        const pNotice = document.getElementById('blockedCouponNotice');
         if (pName) pName.textContent = prevName;
         if (pInfo) pInfo.textContent = `Mobile: ${mobile}`;
         if (pRew) pRew.textContent = prevReward;
-        if (pCode) pCode.textContent = code;
+        if (prevNum > 0 && code) {
+          if (pCode) pCode.textContent = code;
+          if (pNotice) pNotice.style.display = 'block';
+        } else {
+          if (pNotice) pNotice.style.display = 'none';
+        }
         showScreen('screenBlocked');
         return;
       }
