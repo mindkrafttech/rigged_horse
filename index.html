@@ -691,12 +691,12 @@ const GC = {
   difficulty: [
     // Hurdles 1–5 (Progress 0–25%, 0–5% Discount): 🟢 EASY MODE
     { minPct: 0,   speed: 18.5, gapMs: [2100, 2400], railH: 1.45, name: '🟢 EASY MODE', color: '#4CAF50' },
-    // Hurdles 6–10 (Progress 26–50%, 6–10% Discount): ⚡ EXTREME NORMAL
-    { minPct: 26,  speed: 24.0, gapMs: [1100, 1300], railH: 1.55, name: '⚡ EXTREME MODE', color: '#e8a838' },
-    // Hurdles 11–15 (Progress 51–75%, 11–15% Discount): 🔥 EXTREME HARD
-    { minPct: 51,  speed: 29.0, gapMs: [850, 1000], railH: 1.62, name: '🔥 EXTREME HARD', color: '#ff9933' },
-    // Hurdles 16–20 (Progress 76–100%, 16–20% Discount): ☠️ ULTRA EXTREME
-    { minPct: 76,  speed: 34.0, gapMs: [700, 820], railH: 1.70, name: '☠️ ULTRA EXTREME', color: '#ff4d4d' },
+    // Hurdles 6–10 (Progress 26–50%, 6–10% Discount): ⚡ TOUGH MODE
+    { minPct: 26,  speed: 26.0, gapMs: [900, 1100], railH: 1.60, name: '⚡ TOUGH MODE', color: '#e8a838' },
+    // Hurdles 11–15 (Progress 51–75%, 11–15% Discount): 🔥 EXTREME TOUGH
+    { minPct: 51,  speed: 32.0, gapMs: [700, 850], railH: 1.68, name: '🔥 EXTREME TOUGH', color: '#ff9933' },
+    // Hurdles 16–20 (Progress 76–100%, 16–20% Discount): ☠️ IMPOSSIBLE MODE
+    { minPct: 76,  speed: 38.0, gapMs: [550, 700], railH: 1.78, name: '☠️ IMPOSSIBLE MODE', color: '#ff4d4d' },
   ],
 };
 
@@ -3823,13 +3823,13 @@ class Game {
     const isExtreme = this.progress > 25;
     if (hType === 0) {
       // Small/Low hurdle
-      railH = (isExtreme ? 0.90 : 0.82) + Math.random() * 0.06;
+      railH = (isExtreme ? 1.05 : 0.82) + Math.random() * 0.08;
     } else if (hType === 1) {
       // Medium hurdle
-      railH = (isExtreme ? 1.18 : 1.08) + Math.random() * 0.08;
+      railH = (isExtreme ? 1.35 : 1.08) + Math.random() * 0.10;
     } else {
-      // Tall hurdle
-      railH = (isExtreme ? 1.40 : 1.32) + Math.random() * 0.10;
+      // Tall hurdle - requires peak jump timing to clear!
+      railH = (isExtreme ? 1.62 : 1.32) + Math.random() * 0.12;
     }
 
     const style = Math.floor(Math.random() * 5); // 5 visual hurdle variations
@@ -4157,12 +4157,11 @@ function showScreen(id) {
 
       const existing = await checkExistingPlayer(mobile);
 
-      if (btnRegister) {
-        btnRegister.disabled = false;
-        btnRegister.textContent = 'VERIFY & CONTINUE \u2794';
-      }
-
       if (existing && (existing.completed || (existing.attempts_used >= 3))) {
+        if (btnRegister) {
+          btnRegister.disabled = false;
+          btnRegister.textContent = 'VERIFY & CONTINUE \u2794';
+        }
         const prevReward = existing.best_reward || existing.reward || '0% OFF';
         const prevName = existing.name || name;
         const prevNum = parseInt(prevReward) || 0;
@@ -4186,6 +4185,10 @@ function showScreen(id) {
       }
       game.player = playerRecord;
 
+      if (btnRegister) {
+        btnRegister.textContent = '✅ VERIFIED!';
+      }
+
       const welcomeText = document.getElementById('startWelcomeText');
       if (welcomeText) {
         const attemptsUsed = parseInt(playerRecord.attempts_used) || 0;
@@ -4193,7 +4196,13 @@ function showScreen(id) {
         welcomeText.innerHTML = `Welcome <b>${name}</b>! Verification successful. You have <b>${attemptsLeft} ${attemptsLeft === 1 ? 'attempt' : 'attempts'}</b> to clear 20 hurdles and win up to <b>20% OFF</b> your ticket!`;
       }
 
-      showScreen('screenStart');
+      setTimeout(() => {
+        if (btnRegister) {
+          btnRegister.disabled = false;
+          btnRegister.textContent = 'VERIFY & CONTINUE \u2794';
+        }
+        showScreen('screenStart');
+      }, 300);
     });
   }
 
