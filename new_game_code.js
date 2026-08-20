@@ -81,6 +81,8 @@ const Sound = (() => {
   let ctx = null;
   let muted = false;
   let gallopTimer = 0;
+  let sharedNoiseBuffer = null;
+  let sharedNoiseSampleRate = 0;
   
   // Optional audio element for custom gallop/music files
   let customGallopAudio = null;
@@ -129,14 +131,17 @@ const Sound = (() => {
       osc.start(t0); osc.stop(t0 + 0.055);
 
       // 2. Dirt crunch (bandpass filtered noise burst for turf scatter)
-      const bufferSize = Math.floor(c.sampleRate * 0.04);
-      const buffer = c.createBuffer(1, bufferSize, c.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+      if (!sharedNoiseBuffer || sharedNoiseSampleRate !== c.sampleRate) {
+        sharedNoiseSampleRate = c.sampleRate;
+        const bufferSize = Math.floor(c.sampleRate * 0.04);
+        sharedNoiseBuffer = c.createBuffer(1, bufferSize, c.sampleRate);
+        const data = sharedNoiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+        }
       }
       const noise = c.createBufferSource();
-      noise.buffer = buffer;
+      noise.buffer = sharedNoiseBuffer;
 
       const filter = c.createBiquadFilter();
       filter.type = 'bandpass';
@@ -752,6 +757,7 @@ class ThreeEnv {
     const W = stage.clientWidth, H = stage.clientHeight;
     this.renderer.setSize(W, H);
     this.camera.aspect = W / H;
+    this.isMobile = (this.camera.aspect < 1.1 || W < 768);
     // Narrow portrait: widen FOV so horse + next hurdle always stay framed
     if (this.camera.aspect < 1.1) {
       this.camera.fov = Math.min(72, 60 / Math.max(0.5, this.camera.aspect));
@@ -2405,7 +2411,7 @@ class ThreeEnv {
   /* ----- Horse visual + soft dynamic shadow ----- */
   syncHorse(jumpY, animState, animFrame, gameState) {
     const H = GC.player.horseHeight;
-    const isMobile = (this.camera && (this.camera.aspect < 1.1 || window.innerWidth < 768));
+    const isMobile = !!this.isMobile;
     const hScale = isMobile ? 0.82 : 1.0;
     this.horseMesh.scale.set(hScale, hScale, 1);
     this.horseMesh.position.y = (H * hScale) / 2 + jumpY;
@@ -2463,7 +2469,7 @@ class ThreeEnv {
   updateCamera(dt, jumpY, speed, hardMode) {
     if (this.cameraMode === undefined) this.cameraMode = 0;
     const aspect = this.camera.aspect || 1.0;
-    const isMobilePortrait = (aspect < 1.1 || window.innerWidth < 768);
+    const isMobilePortrait = (aspect < 1.1 || !!this.isMobile);
 
     let targetZ, targetCamX, targetY, lookX, lookY;
     const jumpFollow = jumpY * 0.25;
@@ -2587,7 +2593,7 @@ class ThreeEnv {
     this.syncHurdles(game.hurdles);
 
     // continuous hoof dust while galloping (reduced slightly on mobile view)
-    const isMobile = (this.camera.aspect < 1.1 || window.innerWidth < 768);
+    const isMobile = !!this.isMobile;
     const dustProb = isMobile ? 0.18 : 0.35;
     const dustCount = isMobile ? 2 : 3;
     if (game.state === STATE.PLAYING && !game.isAirborne && Math.random() < dustProb) {
@@ -2918,6 +2924,11 @@ class Game {
     this.idleTimer = 0;
 
     // Reset HUD elements
+    _hudCache.pct = -1;
+    _hudCache.reward = -1;
+    _hudCache.timerText = '';
+    _hudCache.warning = null;
+    _hudCache.critical = null;
     const modePill = document.getElementById('modePill');
     if (modePill) modePill.innerHTML = 'MODE: <b>EASY</b>';
     const progPill = document.getElementById('progressPill');
@@ -3394,55 +3405,93 @@ class Game {
 }
 
 /* ====================== UI HELPERS ======================================== */
+const _hudEls = {};
+const _hudCache = { pct: -1, reward: -1, timerText: '', warning: null, critical: null };
+
 function updateHUD(game) {
+  if (!_hudEls.progressPill) {
+    _hudEls.progressPill = document.getElementById('progressPill');
+    _hudEls.progressFill = document.getElementById('progressFill');
+    _hudEls.rewardPill   = document.getElementById('rewardPill');
+    _hudEls.timerPill    = document.getElementById('timerPill');
+    _hudEls.timerVal     = document.getElementById('timerVal');
+  }
+
   const pct = Math.floor(game.progress);
-  document.getElementById('progressPill').innerHTML = `PROGRESS: <b>${pct}%</b>`;
-  document.getElementById('progressFill').style.width = pct + '%';
+  if (pct !== _hudCache.pct) {
+    _hudCache.pct = pct;
+    if (_hudEls.progressPill) _hudEls.progressPill.innerHTML = `PROGRESS: <b>${pct}%</b>`;
+    if (_hudEls.progressFill) _hudEls.progressFill.style.width = pct + '%';
+  }
   
-  const stats = game.getStats ? game.getStats() : { firstHurdlePassed: game.hurdlesCleared > 0 };
-  const reward = calculateReward(game.progress, game.elapsedTime, game.remainingTime, stats);
-  document.getElementById('rewardPill').innerHTML = `REWARD: <b>${reward}% OFF</b>`;
+  const reward = calculateReward(game.progress, game.elapsedTime, game.remainingTime, game);
+  if (reward !== _hudCache.reward) {
+    _hudCache.reward = reward;
+    if (_hudEls.rewardPill) _hudEls.rewardPill.innerHTML = `REWARD: <b>${reward}% OFF</b>`;
+  }
 
   // Timer HUD update
-  const timerPill = document.getElementById('timerPill');
-  const timerVal  = document.getElementById('timerVal');
-  if (timerPill && timerVal) {
+  if (_hudEls.timerPill && _hudEls.timerVal) {
     const sec = Math.max(0, game.remainingTime);
     const m = Math.floor(sec / 60);
     const s = (sec % 60).toFixed(2);
-    timerVal.textContent = `${m.toString().padStart(2,'0')}:${s.padStart(5,'0')}`;
+    const timerText = `${m.toString().padStart(2,'0')}:${s.padStart(5,'0')}`;
+    if (timerText !== _hudCache.timerText) {
+      _hudCache.timerText = timerText;
+      _hudEls.timerVal.textContent = timerText;
+    }
     
-    timerPill.classList.toggle('warning', sec <= TIMER_CONFIG.warningSeconds && sec > TIMER_CONFIG.criticalSeconds);
-    timerPill.classList.toggle('critical', sec <= TIMER_CONFIG.criticalSeconds);
+    const warning = sec <= TIMER_CONFIG.warningSeconds && sec > TIMER_CONFIG.criticalSeconds;
+    const critical = sec <= TIMER_CONFIG.criticalSeconds;
+    
+    if (warning !== _hudCache.warning) {
+      _hudCache.warning = warning;
+      _hudEls.timerPill.classList.toggle('warning', warning);
+    }
+    if (critical !== _hudCache.critical) {
+      _hudCache.critical = critical;
+      _hudEls.timerPill.classList.toggle('critical', critical);
+    }
   }
 }
 
+let _hardModeBannerEl = null;
 function flashHardModeBanner(text = 'LEVEL UP!', color = '#ffe89c') {
-  const el = document.getElementById('hardModeBanner');
-  if (!el) return;
-  el.textContent = text;
-  if (color) el.style.borderColor = color;
-  el.classList.add('show');
-  if (el._timer) clearTimeout(el._timer);
-  el._timer = setTimeout(() => el.classList.remove('show'), 1600);
+  if (!_hardModeBannerEl) _hardModeBannerEl = document.getElementById('hardModeBanner');
+  if (!_hardModeBannerEl) return;
+  _hardModeBannerEl.textContent = text;
+  if (color) _hardModeBannerEl.style.borderColor = color;
+  _hardModeBannerEl.classList.add('show');
+  if (_hardModeBannerEl._timer) clearTimeout(_hardModeBannerEl._timer);
+  _hardModeBannerEl._timer = setTimeout(() => _hardModeBannerEl.classList.remove('show'), 1600);
 }
 
+let _feedbackLayerEl = null;
 function spawnFloatingText(text) {
-  const layer = document.getElementById('feedbackLayer');
+  if (!_feedbackLayerEl) _feedbackLayerEl = document.getElementById('feedbackLayer');
+  if (!_feedbackLayerEl) return;
   const el = document.createElement('div');
   el.className = 'float-pop';
   el.textContent = text;
   el.style.left = '22%';
   el.style.top  = '40%';
-  layer.appendChild(el);
+  _feedbackLayerEl.appendChild(el);
   setTimeout(() => el.remove(), 950);
 }
 
+let _overlayEls = null;
+let _startHintEl = null;
 function showScreen(id) {
-  document.querySelectorAll('.overlay').forEach(el => el.classList.remove('active'));
-  const hint = document.getElementById('startHint');
-  hint.style.display = (id === null) ? 'block' : 'none';
-  if (id) document.getElementById(id).classList.add('active');
+  if (!_overlayEls) {
+    _overlayEls = document.querySelectorAll('.overlay');
+    _startHintEl = document.getElementById('startHint');
+  }
+  _overlayEls.forEach(el => el.classList.remove('active'));
+  if (_startHintEl) _startHintEl.style.display = (id === null) ? 'block' : 'none';
+  if (id) {
+    const target = document.getElementById(id);
+    if (target) target.classList.add('active');
+  }
 }
 
 /* ====================== BOOT ============================================== */
