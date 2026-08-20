@@ -3823,13 +3823,13 @@ class Game {
     const isExtreme = this.progress > 25;
     if (hType === 0) {
       // Small/Low hurdle
-      railH = (isExtreme ? 1.05 : 0.82) + Math.random() * 0.08;
+      railH = (isExtreme ? 1.20 : 0.92) + Math.random() * 0.08;
     } else if (hType === 1) {
       // Medium hurdle
-      railH = (isExtreme ? 1.35 : 1.08) + Math.random() * 0.10;
+      railH = (isExtreme ? 1.50 : 1.18) + Math.random() * 0.10;
     } else {
       // Tall hurdle - requires peak jump timing to clear!
-      railH = (isExtreme ? 1.62 : 1.32) + Math.random() * 0.12;
+      railH = (isExtreme ? 1.78 : 1.44) + Math.random() * 0.12;
     }
 
     const style = Math.floor(Math.random() * 5); // 5 visual hurdle variations
