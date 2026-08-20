@@ -3577,12 +3577,40 @@ function showScreen(id) {
   }
 }
 
+function updateInitProgress(pct, statusText) {
+  const bar = document.getElementById('initProgressBar');
+  const txt = document.getElementById('initProgressPct');
+  const status = document.getElementById('initStatusText');
+  if (bar) bar.style.width = pct + '%';
+  if (txt) txt.textContent = pct + '%';
+  if (status && statusText) status.textContent = statusText;
+}
+
 /* ====================== BOOT ============================================== */
 (async function init() {
+  updateInitProgress(15, "Loading horse sprites & visual assets...");
   await loadAllAssets();
 
+  updateInitProgress(50, "Initializing 3D arena & WebGL shaders...");
   const env  = new ThreeEnv();
   const game = new Game(env);
+
+  updateInitProgress(80, "Pre-compiling WebGL shaders & warm-up...");
+  // Force Three.js to compile all WebGL shader programs and warm up GPU buffers
+  if (env.renderer && env.scene && env.camera) {
+    try {
+      env.renderer.compile(env.scene, env.camera);
+      env.renderIdle(0.016);
+      env.render(0.016, game);
+    } catch(e){}
+  }
+
+  updateInitProgress(100, "Arena Ready!");
+
+  // Transition smoothly from initialization screen to registration screen
+  setTimeout(() => {
+    showScreen('screenRegister');
+  }, 350);
 
   const regForm = document.getElementById('regForm');
   const regError = document.getElementById('regError');
