@@ -658,6 +658,13 @@ function createRailTexture(a, b) {
   return _tex(c, 3, 1);
 }
 
+/* Yields one frame back to the browser so a long synchronous build doesn't
+   block input/paint in one giant chunk. Purely a scheduling aid — it changes
+   nothing about what gets built or how it looks. */
+function nextFrame() {
+  return new Promise(resolve => requestAnimationFrame(resolve));
+}
+
 /* ========================= THREE.JS ENVIRONMENT =========================== */
 class ThreeEnv {
   constructor() {
@@ -686,7 +693,11 @@ class ThreeEnv {
     this.dustActive = [];
     this.DUST_COUNT = 150;
 
-    this.init();
+    // init() builds ~2000 lines worth of geometry/instances synchronously.
+    // It's kicked off here and exposed as a promise so callers that need the
+    // scene ready (the render loop) can await it, while callers that don't
+    // (UI wiring) aren't forced to block on it.
+    this.ready = this.init();
   }
 
   /* ------------------------------------------------------------------ */
@@ -706,7 +717,7 @@ class ThreeEnv {
   }
 
   /* ----- Renderer & Scene ----- */
-  init() {
+  async init() {
     const canvas = document.getElementById('game');
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: window.devicePixelRatio < 1.5, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -733,14 +744,27 @@ class ThreeEnv {
     this.texChecker = createCheckerTexture();
     this.texSeats   = createSeatingTexture();
 
+    // Building the arena is a lot of geometry/instance/texture work. It's
+    // split into a few chunks with a frame yielded in between so it can't
+    // lock up input handling (registration form, buttons) as one long task.
+    // Same objects, same order, same end state — just spread across a few
+    // animation frames instead of one blocking call.
     this.buildLighting();
     this.buildSky();
     this.buildSkyline();        // 0.10  distant royal city
+    await nextFrame();
+
     this.buildGrandstands();    // 0.22  stands + 232 live spectators + billboard mass
+    await nextFrame();
+
     this.buildFloodlights();    // 0.30  lighting towers, flag row
     this.buildGround();         // 1.00  turf + premium raked track
+    await nextFrame();
+
     this.buildTrackside();      // 0.90  banner wall, rail fence, lamps, garlands
     this.buildForeground();     // 1.12  planters, topiary, ornaments
+    await nextFrame();
+
     this.buildRunningLights();  // 1.20  champagne-gold running lights
     this.buildHurdlePool();
     this.buildFinishGate();
@@ -750,6 +774,13 @@ class ThreeEnv {
 
     window.addEventListener('resize', () => this.resize());
     this.resize();
+
+    // Pre-compile every shader program the scene will need up front, in this
+    // same setup phase, instead of paying that cost as a hitch the first
+    // time each material/light combination actually gets drawn (which would
+    // otherwise land as a stutter on the first idle frame or the first few
+    // seconds of gameplay).
+    this.renderer.compile(this.scene, this.camera);
   }
 
   resize() {
@@ -3614,5 +3645,9 @@ function showScreen(id) {
   // debug/QA handle (harmless in production, lets the console inspect state)
   if (typeof window !== 'undefined') window.DERBY_GAME = game;
 
+  // The registration screen and its listeners above are already live and
+  // responsive at this point. The render loop itself only needs to wait for
+  // the arena (env.ready) so the first frame it draws is complete.
+  await env.ready;
   requestAnimationFrame(t => { game.lastTime = t; game.loop(t); });
 })();
