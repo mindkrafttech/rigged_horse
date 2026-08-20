@@ -1,14 +1,15 @@
-#!/usr/bin/env node
-/* build_game.mjs — cross-platform twin of build_game.ps1.
-   Produces byte-identical index.html on Windows / macOS / Linux / CI.
-     node build_game.mjs
-*/
 import fs from 'fs';
 
-const head = fs.readFileSync('backup/horse-jump-game.html', 'utf8').split('\n');
+const headSource = fs.existsSync('backup/horse-jump-game.html') ? 'backup/horse-jump-game.html' : 'index.html';
+const head = fs.readFileSync(headSource, 'utf8').split('\n');
 let styleEnd = -1;
-head.forEach((l, i) => { if (l.trim() === '</style>') styleEnd = i; });
-if (styleEnd < 0) throw new Error('Could not find </style> in backup/horse-jump-game.html');
+for (let i = 0; i < head.length; i++) {
+  if (head[i].trim() === '</style>') {
+    styleEnd = i;
+    break; // MUST STOP AT FIRST </style> tag in <head>!
+  }
+}
+if (styleEnd < 0) throw new Error('Could not find </style>');
 
 const htmlHead = head.slice(0, styleEnd + 1).join('\n');
 const body = fs.readFileSync('_body_template.html', 'utf8');

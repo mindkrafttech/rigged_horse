@@ -3595,11 +3595,13 @@ function updateInitProgress(pct, statusText) {
   const env  = new ThreeEnv();
   const game = new Game(env);
 
-  updateInitProgress(80, "Pre-compiling WebGL shaders & warm-up...");
-  // Force Three.js to compile all WebGL shader programs and warm up GPU buffers
+  updateInitProgress(80, "Pre-compiling WebGL shaders & warming GPU pipeline...");
+  // Force Three.js to compile all WebGL shader programs and warm up GPU buffers & audio
   if (env.renderer && env.scene && env.camera) {
     try {
       env.renderer.compile(env.scene, env.camera);
+      env.triggerJumpDust();
+      env.triggerLandingDust();
       env.renderIdle(0.016);
       env.render(0.016, game);
     } catch(e){}
@@ -3610,7 +3612,7 @@ function updateInitProgress(pct, statusText) {
   // Transition smoothly from initialization screen to registration screen
   setTimeout(() => {
     showScreen('screenRegister');
-  }, 350);
+  }, 400);
 
   const regForm = document.getElementById('regForm');
   const regError = document.getElementById('regError');

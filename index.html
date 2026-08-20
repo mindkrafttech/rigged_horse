@@ -337,18 +337,79 @@
       .reg-error{color:#d32f2f;font-size:12px;margin-top:4px;min-height:16px;text-align:center;font-weight:700;}
       
       .rules-box{
-        background:rgba(255,255,255,0.75);
-        border:1px solid rgba(150,104,52,0.35);
-        border-radius:10px;
-        padding:10px 12px;
-        margin-bottom:12px;
+        background:linear-gradient(135deg, rgba(255,255,255,0.92), rgba(244,236,216,0.95));
+        border:1.5px solid rgba(150,104,52,0.45);
+        border-radius:12px;
+        padding:12px 14px;
+        margin-bottom:14px;
         text-align:left;
+        box-shadow:0 4px 14px rgba(0,0,0,0.15);
       }
-      .rules-title{font-size:11px;font-weight:800;letter-spacing:0.06em;color:#2b1408;margin-bottom:6px;text-transform:uppercase;}
-      .rules-grid{display:flex;flex-direction:column;gap:6px;font-size:11px;color:#332211;line-height:1.35;}
-      .rule-item{display:flex;align-items:flex-start;gap:8px;}
-      .rule-icon{font-size:13px;flex-shrink:0;}
+      .rules-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+      .rules-badge{background:#2b1408;color:#ffe89c;font-size:9px;font-weight:800;padding:2px 7px;border-radius:4px;letter-spacing:0.06em;}
+      .rules-title{font-size:13px;font-weight:900;color:#1d0a2b;letter-spacing:0.02em;}
+      .how-to-steps{display:grid;grid-template-columns:repeat(3, 1fr);gap:6px;margin-bottom:10px;}
+      .step-card{
+        position:relative;background:#ffffff;border:1px solid rgba(150,104,52,0.3);
+        border-radius:8px;padding:8px 6px;text-align:center;
+        box-shadow:0 2px 6px rgba(0,0,0,0.05);
+      }
+      .step-num{
+        position:absolute;top:-5px;left:-5px;width:16px;height:16px;
+        border-radius:50%;background:#6d1230;color:#ffffff;
+        font-size:9px;font-weight:900;display:flex;align-items:center;justify-content:center;
+      }
+      .step-icon{font-size:18px;margin-bottom:2px;}
+      .step-title{font-size:10px;font-weight:800;color:#1d0a2b;line-height:1.1;}
+      .step-desc{font-size:9px;color:#554433;margin-top:2px;line-height:1.2;}
+
+      .visual-controls-bar{
+        display:flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:space-between;
+        background:rgba(43,20,8,0.06);padding:6px 8px;border-radius:6px;margin-bottom:10px;
+      }
+      .control-chip{font-size:10px;font-weight:700;color:#2b1408;display:flex;align-items:center;gap:3px;}
+      .chip-label{opacity:0.75;font-size:9px;}
+      .attempts-badge{background:#6d1230;color:#fff;padding:1px 5px;border-radius:4px;font-size:9px;font-weight:800;}
+
+      .tier-badges-wrap{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+      .tier-badge{font-size:9.5px;font-weight:700;padding:4px 6px;border-radius:6px;line-height:1.2;}
+      .tier-badge.easy{background:rgba(76,175,80,0.15);border:1px solid rgba(76,175,80,0.4);color:#1b5e20;}
+      .tier-badge.tough{background:rgba(232,168,56,0.18);border:1px solid rgba(232,168,56,0.45);color:#795548;}
+      .tier-badge.extreme{background:rgba(255,153,51,0.18);border:1px solid rgba(255,153,51,0.45);color:#e65100;}
+      .tier-badge.max{background:rgba(194,59,87,0.18);border:1px solid rgba(194,59,87,0.45);color:#b71c1c;}
       .kbd-sm{background:#2b1408;color:#ffe89c;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;font-family:monospace;}
+
+      .init-progress-box{width:100%;margin:12px 0 6px;}
+      .init-progress-bar{
+        width:100%;height:14px;background:rgba(29,10,43,0.15);
+        border:1px solid rgba(150,104,52,0.4);border-radius:10px;overflow:hidden;
+      }
+      .init-progress-fill{
+        width:0%;height:100%;
+        background:linear-gradient(90deg, #6d1230, #d8b45a, #f3dc9a);
+        border-radius:10px;transition:width 0.25s ease-out;
+      }
+      .init-status-text{font-size:11px;font-weight:700;color:#2b1408;margin-top:6px;letter-spacing:0.03em;}
+      .init-spinner{font-size:28px;margin-top:10px;animation:horseGallop 0.6s infinite ease-in-out alternate;}
+      @keyframes horseGallop{
+        0%{transform:translateY(0) rotate(0deg);}
+        100%{transform:translateY(-6px) rotate(-6deg);}
+      }
+
+      @media (max-width:768px){
+        #jumpBtn{
+          right:auto !important;
+          left:50% !important;
+          transform:translateX(-50%) !important;
+          bottom:calc(14px + env(safe-area-inset-bottom)) !important;
+          width:86px !important;
+          height:86px !important;
+        }
+        #jumpBtn:active, #jumpBtn.pressed{
+          transform:translateX(-50%) translateY(6px) scale(0.97) !important;
+        }
+        #startHint{bottom:108px !important;}
+      }
 
       #hardModeBanner{
         position:absolute; top:12px; left:50%;
@@ -428,38 +489,81 @@
     <button id="cameraBtn" title="Switch Camera View (C)">📷 <span id="cameraModeLbl">CAM: SIDE</span></button>
     <button id="pauseBtn" title="Pause / Resume Game (P)">⏸</button>
 
-    <!-- REGISTRATION SCREEN (FIRST SCREEN) -->
-    <div class="overlay active" id="screenRegister">
+    <!-- INITIALIZING SCREEN (LOADS BEFORE REGISTRATION) -->
+    <div class="overlay active" id="screenInit">
+      <div class="card" style="max-width:400px; text-align:center; padding:24px 20px;">
+        <div class="eyebrow">ROYAL CHAMPIONSHIP DERBY &bull; 2026</div>
+        <h1 style="margin-bottom:8px; font-size:22px;">Initializing Arena...</h1>
+        <p style="font-size:12px; margin-bottom:14px; color:#554433; font-weight:600;">
+          Loading 3D graphics, pre-compiling WebGL shaders &amp; warming audio engine for zero-lag gameplay.
+        </p>
+
+        <div class="init-progress-box">
+          <div class="init-progress-bar"><div class="init-progress-fill" id="initProgressBar"></div></div>
+          <div class="init-status-text">
+            <span id="initStatusText">Loading visual assets...</span> (<b id="initProgressPct">0%</b>)
+          </div>
+        </div>
+
+        <div class="init-spinner">🏇</div>
+      </div>
+    </div>
+
+    <!-- REGISTRATION SCREEN -->
+    <div class="overlay" id="screenRegister">
       <div class="card" style="max-width:440px;">
         <div class="eyebrow">ROYAL CHAMPIONSHIP DERBY &bull; REGISTRATION</div>
         <h1 style="margin-bottom:6px;">Player Registration</h1>
         
-        <!-- RULES & HOW TO PLAY -->
+        <!-- VISUAL RULES & HOW TO PLAY -->
         <div class="rules-box">
-          <div class="rules-title">🎮 HOW TO PLAY & DISCOUNT RULES</div>
-          <div class="rules-grid">
-            <div class="rule-item">
-              <span class="rule-icon">🏇</span>
-              <div>
-                <strong>Controls:</strong> Press <span class="kbd-sm">SPACE</span> / <span class="kbd-sm">↑</span> or tap <span class="kbd-sm">JUMP</span> to clear hurdles. Press <span class="kbd-sm">C</span> to switch camera, <span class="kbd-sm">P</span> to pause.
+          <div class="rules-header">
+            <span class="rules-badge">🎮 GAMEPLAY GUIDE</span>
+            <div class="rules-title">How to Play &amp; Discount Rules</div>
+          </div>
+
+          <!-- Step 1: Visual Action Flow -->
+          <div class="how-to-steps">
+            <div class="step-card">
+              <div class="step-num">1</div>
+              <div class="step-icon">🏇</div>
+              <div class="step-content">
+                <div class="step-title">Jump Hurdles</div>
+                <div class="step-desc">Tap <span class="kbd-sm">JUMP</span> or press <span class="kbd-sm">SPACE</span> / <span class="kbd-sm">↑</span></div>
               </div>
             </div>
-            <div class="rule-item">
-              <span class="rule-icon">🎯</span>
-              <div>
-                <strong>3 Attempts Total:</strong> Each player gets <b>up to 3 attempts</b>. Retry to boost your discount or claim your code!
+            <div class="step-card">
+              <div class="step-num">2</div>
+              <div class="step-icon">🎯</div>
+              <div class="step-content">
+                <div class="step-title">Earn Discount</div>
+                <div class="step-desc">Each cleared hurdle = <b>+1% OFF</b></div>
               </div>
             </div>
-            <div class="rule-item">
-              <span class="rule-icon">🏷️</span>
-              <div>
-                <strong>Difficulty & Discount Tiers (1% per Hurdle):</strong><br>
-                &bull; <b>🟢 Hurdles 1–5 (Easy)</b>: Earn 1% to 5% OFF<br>
-                &bull; <b>🟡 Hurdles 6–10 (Normal)</b>: Earn 6% to 10% OFF<br>
-                &bull; <b>🟠 Hurdles 11–15 (Hard)</b>: Earn 11% to 15% OFF<br>
-                &bull; <b>🔴 Hurdles 16–20 (Expert)</b>: Earn 16% to 20% OFF (MAX!)
+            <div class="step-card">
+              <div class="step-num">3</div>
+              <div class="step-icon">🎟️</div>
+              <div class="step-content">
+                <div class="step-title">Win Coupon</div>
+                <div class="step-desc">Win up to <b>20% MAX OFF</b> code</div>
               </div>
             </div>
+          </div>
+
+          <!-- Visual Controls Badge Bar -->
+          <div class="visual-controls-bar">
+            <div class="control-chip"><span class="chip-label">JUMP</span> <span class="kbd-sm">SPACE</span> <span class="kbd-sm">↑</span></div>
+            <div class="control-chip"><span class="chip-label">CAMERA</span> <span class="kbd-sm">C</span></div>
+            <div class="control-chip"><span class="chip-label">PAUSE</span> <span class="kbd-sm">P</span></div>
+            <div class="control-chip"><span class="chip-label">ATTEMPTS</span> <span class="attempts-badge">3 TRIES</span></div>
+          </div>
+
+          <!-- Visual Tier Badges -->
+          <div class="tier-badges-wrap">
+            <div class="tier-badge easy">🟢 Hurdles 1–5: <b>1%–5% OFF</b></div>
+            <div class="tier-badge tough">🟡 Hurdles 6–10: <b>6%–10% OFF</b></div>
+            <div class="tier-badge extreme">🟠 Hurdles 11–15: <b>11%–15% OFF</b></div>
+            <div class="tier-badge max">🔴 Hurdles 16–20: <b>16%–20% MAX</b></div>
           </div>
         </div>
 
@@ -4205,12 +4309,42 @@ function showScreen(id) {
   }
 }
 
+function updateInitProgress(pct, statusText) {
+  const bar = document.getElementById('initProgressBar');
+  const txt = document.getElementById('initProgressPct');
+  const status = document.getElementById('initStatusText');
+  if (bar) bar.style.width = pct + '%';
+  if (txt) txt.textContent = pct + '%';
+  if (status && statusText) status.textContent = statusText;
+}
+
 /* ====================== BOOT ============================================== */
 (async function init() {
+  updateInitProgress(15, "Loading horse sprites & visual assets...");
   await loadAllAssets();
 
+  updateInitProgress(50, "Initializing 3D arena & WebGL shaders...");
   const env  = new ThreeEnv();
   const game = new Game(env);
+
+  updateInitProgress(80, "Pre-compiling WebGL shaders & warming GPU pipeline...");
+  // Force Three.js to compile all WebGL shader programs and warm up GPU buffers & audio
+  if (env.renderer && env.scene && env.camera) {
+    try {
+      env.renderer.compile(env.scene, env.camera);
+      env.triggerJumpDust();
+      env.triggerLandingDust();
+      env.renderIdle(0.016);
+      env.render(0.016, game);
+    } catch(e){}
+  }
+
+  updateInitProgress(100, "Arena Ready!");
+
+  // Transition smoothly from initialization screen to registration screen
+  setTimeout(() => {
+    showScreen('screenRegister');
+  }, 400);
 
   const regForm = document.getElementById('regForm');
   const regError = document.getElementById('regError');
